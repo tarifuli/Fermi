@@ -18,6 +18,10 @@ ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', 'YOUR_API_KEY_HERE')
 def inject_now():
     return {'now': datetime.now().strftime('%b %d, %Y')}
 
+# Run on startup — works with both gunicorn and python app.py
+with app.app_context():
+    pass
+
 def get_db():
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
@@ -104,6 +108,9 @@ def init_db():
                 for it in item_data:
                     db.execute('INSERT INTO invoice_items (invoice_id, product_id, product_name, quantity, unit_price, total) VALUES (?,?,?,?,?,?)',
                                (inv_id, it[0], it[1], it[2], it[3], it[4]))
+
+# Initialize database immediately — runs under both gunicorn and python app.py
+init_db()
 
 def next_invoice_number():
     with get_db() as db:
