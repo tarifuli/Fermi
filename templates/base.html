@@ -169,6 +169,10 @@
     <div class="topbar-right">
       <span class="badge-blue">🇧🇩 BDT</span>
       <span style="font-size:13px;color:var(--muted);">{{ now }}</span>
+      {% if session.user_name %}
+      <span style="font-size:13px;font-weight:500;color:var(--navy);">👤 {{ session.user_name }}</span>
+      <a href="/logout" style="font-size:12px;padding:5px 12px;background:var(--rose);color:var(--red);border-radius:6px;text-decoration:none;font-weight:600;">Logout</a>
+      {% endif %}
     </div>
   </div>
   <div class="content">
