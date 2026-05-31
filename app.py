@@ -1,5 +1,5 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file
-import sqlite3, json, os
+from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file, session
+import sqlite3, json, os, hashlib, secrets
 from datetime import datetime, timedelta
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -10,6 +10,7 @@ import anthropic
 import io
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 
 DATABASE = 'fermi.db'
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', 'YOUR_API_KEY_HERE')
@@ -18,10 +19,23 @@ ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', 'YOUR_API_KEY_HERE')
 def inject_now():
     return {'now': datetime.now().strftime('%b %d, %Y')}
 
-# Run on startup — works with both gunicorn and python app.py
 with app.app_context():
     pass
 
+# ── AUTH HELPERS ─────────────────────────────────────────────────────────────
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def login_required(f):
+    from functools import wraps
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated
+
+# ── DATABASE ─────────────────────────────────────────────────────────────────
 def get_db():
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
@@ -30,6 +44,13 @@ def get_db():
 def init_db():
     with get_db() as db:
         db.executescript('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
             CREATE TABLE IF NOT EXISTS products (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -109,9 +130,9 @@ def init_db():
                     db.execute('INSERT INTO invoice_items (invoice_id, product_id, product_name, quantity, unit_price, total) VALUES (?,?,?,?,?,?)',
                                (inv_id, it[0], it[1], it[2], it[3], it[4]))
 
-# Initialize database immediately — runs under both gunicorn and python app.py
 init_db()
 
+# ── HELPERS ──────────────────────────────────────────────────────────────────
 def next_invoice_number():
     with get_db() as db:
         last = db.execute("SELECT invoice_number FROM invoices ORDER BY id DESC LIMIT 1").fetchone()
@@ -149,18 +170,80 @@ def get_dashboard_stats():
                 'total_invoices': total_invoices, 'low_stock': low_stock,
                 'total_products': total_products, 'daily': daily}
 
+# ── AUTH ROUTES ──────────────────────────────────────────────────────────────
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if 'user_id' in session:
+        return redirect(url_for('dashboard'))
+    error = None
+    if request.method == 'POST':
+        email    = request.form.get('email', '').strip().lower()
+        password = request.form.get('password', '')
+        with get_db() as db:
+            user = db.execute('SELECT * FROM users WHERE email=?', (email,)).fetchone()
+        if user and user['password'] == hash_password(password):
+            session['user_id']   = user['id']
+            session['user_name'] = user['name']
+            session['user_email']= user['email']
+            return redirect(url_for('dashboard'))
+        else:
+            error = 'Invalid email or password. Please try again.'
+    return render_template('login.html', error=error)
+
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    if 'user_id' in session:
+        return redirect(url_for('dashboard'))
+    error = None
+    if request.method == 'POST':
+        name     = request.form.get('name', '').strip()
+        email    = request.form.get('email', '').strip().lower()
+        password = request.form.get('password', '')
+        confirm  = request.form.get('confirm_password', '')
+        if not name or not email or not password:
+            error = 'All fields are required.'
+        elif len(password) < 6:
+            error = 'Password must be at least 6 characters.'
+        elif password != confirm:
+            error = 'Passwords do not match.'
+        else:
+            try:
+                with get_db() as db:
+                    db.execute('INSERT INTO users (name, email, password) VALUES (?,?,?)',
+                               (name, email, hash_password(password)))
+                    user = db.execute('SELECT * FROM users WHERE email=?', (email,)).fetchone()
+                    session['user_id']    = user['id']
+                    session['user_name']  = user['name']
+                    session['user_email'] = user['email']
+                return redirect(url_for('dashboard'))
+            except Exception as e:
+                if 'UNIQUE' in str(e):
+                    error = 'An account with this email already exists. Please log in.'
+                else:
+                    error = 'Something went wrong. Please try again.'
+    return render_template('signup.html', error=error)
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+# ── MAIN ROUTES (protected) ──────────────────────────────────────────────────
 @app.route('/')
+@login_required
 def dashboard():
     return render_template('dashboard.html', stats=get_dashboard_stats(),
                            sales_7=get_sales_data(7)[:5], sales_30=get_sales_data(30)[:5])
 
 @app.route('/products')
+@login_required
 def products():
     with get_db() as db:
         prods = db.execute('SELECT * FROM products ORDER BY name').fetchall()
     return render_template('products.html', products=[dict(p) for p in prods])
 
 @app.route('/products/add', methods=['POST'])
+@login_required
 def add_product():
     d = request.json
     try:
@@ -172,6 +255,7 @@ def add_product():
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/products/edit/<int:pid>', methods=['POST'])
+@login_required
 def edit_product(pid):
     d = request.json
     try:
@@ -183,30 +267,35 @@ def edit_product(pid):
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/products/delete/<int:pid>', methods=['POST'])
+@login_required
 def delete_product(pid):
     with get_db() as db:
         db.execute('DELETE FROM products WHERE id=?', (pid,))
     return jsonify({'success': True})
 
 @app.route('/api/products')
+@login_required
 def api_products():
     with get_db() as db:
         prods = db.execute('SELECT * FROM products ORDER BY name').fetchall()
     return jsonify([dict(p) for p in prods])
 
 @app.route('/invoices')
+@login_required
 def invoices():
     with get_db() as db:
         invs = db.execute('SELECT * FROM invoices ORDER BY created_at DESC').fetchall()
     return render_template('invoices.html', invoices=[dict(i) for i in invs])
 
 @app.route('/invoices/new')
+@login_required
 def new_invoice():
     with get_db() as db:
         prods = db.execute('SELECT * FROM products ORDER BY name').fetchall()
     return render_template('new_invoice.html', invoice_number=next_invoice_number(), products=[dict(p) for p in prods])
 
 @app.route('/invoices/create', methods=['POST'])
+@login_required
 def create_invoice():
     d = request.json
     try:
@@ -228,6 +317,7 @@ def create_invoice():
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/invoices/<int:inv_id>')
+@login_required
 def view_invoice(inv_id):
     with get_db() as db:
         inv   = db.execute('SELECT * FROM invoices WHERE id=?', (inv_id,)).fetchone()
@@ -236,6 +326,7 @@ def view_invoice(inv_id):
     return render_template('view_invoice.html', invoice=dict(inv), items=[dict(i) for i in items])
 
 @app.route('/invoices/<int:inv_id>/pdf')
+@login_required
 def download_pdf(inv_id):
     with get_db() as db:
         inv   = dict(db.execute('SELECT * FROM invoices WHERE id=?', (inv_id,)).fetchone())
@@ -269,10 +360,12 @@ def download_pdf(inv_id):
     return send_file(buffer, as_attachment=True, download_name=f"{inv['invoice_number']}.pdf", mimetype='application/pdf')
 
 @app.route('/chatbot')
+@login_required
 def chatbot():
     return render_template('chatbot.html')
 
 @app.route('/api/chat', methods=['POST'])
+@login_required
 def api_chat():
     user_message = request.json.get('message', '')
     stats    = get_dashboard_stats()
@@ -307,7 +400,7 @@ Compare 7-day vs 30-day data when asked about trends. Respond in the same langua
                                           system=context, messages=[{"role":"user","content":user_message}])
         return jsonify({'reply': response.content[0].text, 'success': True})
     except Exception as e:
-        return jsonify({'reply': f'Error: {str(e)}. Please set your ANTHROPIC_API_KEY.', 'success': False})
+        return jsonify({'reply': f'Error: {str(e)}.', 'success': False})
 
 if __name__ == '__main__':
     init_db()
