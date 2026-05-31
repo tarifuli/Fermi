@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login — Fermi</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'DM Sans',sans-serif; background:#F4F6F9; min-height:100vh; display:flex; align-items:center; justify-content:center; }
+
+  .auth-wrapper { display:grid; grid-template-columns:1fr 1fr; min-height:100vh; width:100%; }
+
+  /* Left panel */
+  .auth-left { background:#1A3A5C; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:60px 48px; }
+  .auth-left-logo { font-family:'Playfair Display',serif; font-size:42px; color:#fff; letter-spacing:2px; margin-bottom:12px; }
+  .auth-left-tag { font-size:15px; color:rgba(255,255,255,0.6); text-align:center; margin-bottom:48px; line-height:1.6; }
+  .auth-features { display:flex; flex-direction:column; gap:16px; width:100%; max-width:320px; }
+  .auth-feature { display:flex; align-items:center; gap:14px; background:rgba(255,255,255,0.07); border-radius:10px; padding:14px 16px; }
+  .auth-feature-icon { width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; }
+  .auth-feature-text strong { display:block; font-size:13px; color:#fff; font-weight:600; }
+  .auth-feature-text span { font-size:12px; color:rgba(255,255,255,0.5); }
+
+  /* Right panel */
+  .auth-right { display:flex; align-items:center; justify-content:center; padding:48px 40px; background:#fff; }
+  .auth-card { width:100%; max-width:400px; }
+  .auth-title { font-size:26px; font-weight:700; color:#1A3A5C; margin-bottom:6px; }
+  .auth-subtitle { font-size:14px; color:#6B7A8D; margin-bottom:32px; }
+
+  .form-group { margin-bottom:18px; }
+  .form-label { display:block; font-size:12px; font-weight:600; color:#6B7A8D; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px; }
+  .form-control { width:100%; padding:11px 14px; border:1.5px solid #DDE3EA; border-radius:8px; font-size:14px; font-family:'DM Sans',sans-serif; color:#1C2833; transition:border-color 0.15s; outline:none; }
+  .form-control:focus { border-color:#2E6DA4; box-shadow:0 0 0 3px rgba(46,109,164,0.1); }
+
+  .btn-submit { width:100%; padding:12px; background:#2E6DA4; color:#fff; border:none; border-radius:8px; font-size:15px; font-weight:600; font-family:'DM Sans',sans-serif; cursor:pointer; transition:background 0.15s; margin-top:6px; }
+  .btn-submit:hover { background:#245d90; }
+
+  .auth-switch { text-align:center; margin-top:24px; font-size:14px; color:#6B7A8D; }
+  .auth-switch a { color:#2E6DA4; font-weight:600; text-decoration:none; }
+  .auth-switch a:hover { text-decoration:underline; }
+
+  .error-box { background:#FDEAEA; border:1px solid #F5B8B8; border-radius:8px; padding:11px 14px; font-size:13px; color:#B03A2E; margin-bottom:20px; }
+
+  .divider { display:flex; align-items:center; gap:12px; margin:20px 0; }
+  .divider-line { flex:1; height:1px; background:#DDE3EA; }
+  .divider-text { font-size:12px; color:#6B7A8D; }
+
+  @media(max-width:768px) {
+    .auth-wrapper { grid-template-columns:1fr; }
+    .auth-left { display:none; }
+    .auth-right { padding:40px 24px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="auth-wrapper">
+  <!-- Left branding panel -->
+  <div class="auth-left">
+    <div class="auth-left-logo">Fermi</div>
+    <div class="auth-left-tag">AI-Powered SME Intelligence Platform<br>for businesses in Bangladesh</div>
+    <div class="auth-features">
+      <div class="auth-feature">
+        <div class="auth-feature-icon" style="background:rgba(46,109,164,0.3);">📦</div>
+        <div class="auth-feature-text">
+          <strong>Inventory Management</strong>
+          <span>Track stock in real time</span>
+        </div>
+      </div>
+      <div class="auth-feature">
+        <div class="auth-feature-icon" style="background:rgba(15,110,86,0.3);">🧾</div>
+        <div class="auth-feature-text">
+          <strong>Invoice Generation</strong>
+          <span>Create & export PDF invoices</span>
+        </div>
+      </div>
+      <div class="auth-feature">
+        <div class="auth-feature-icon" style="background:rgba(196,125,26,0.3);">📊</div>
+        <div class="auth-feature-text">
+          <strong>Sales Dashboard</strong>
+          <span>Live revenue & trend charts</span>
+        </div>
+      </div>
+      <div class="auth-feature">
+        <div class="auth-feature-icon" style="background:rgba(60,52,137,0.3);">🤖</div>
+        <div class="auth-feature-text">
+          <strong>Fermi AI Chatbot</strong>
+          <span>Ask questions in English or Bengali</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right login form -->
+  <div class="auth-right">
+    <div class="auth-card">
+      <div class="auth-title">Welcome back 👋</div>
+      <div class="auth-subtitle">Sign in to your Fermi account</div>
+
+      {% if error %}
+      <div class="error-box">{{ error }}</div>
+      {% endif %}
+
+      <form method="POST" action="/login">
+        <div class="form-group">
+          <label class="form-label">Email Address</label>
+          <input class="form-control" type="email" name="email" placeholder="you@example.com" required autofocus>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input class="form-control" type="password" name="password" placeholder="Enter your password" required>
+        </div>
+        <button type="submit" class="btn-submit">Sign In →</button>
+      </form>
+
+      <div class="auth-switch">
+        Don't have an account? <a href="/signup">Create one free</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

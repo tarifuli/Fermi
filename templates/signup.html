@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign Up — Fermi</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'DM Sans',sans-serif; background:#F4F6F9; min-height:100vh; display:flex; align-items:center; justify-content:center; }
+
+  .auth-wrapper { display:grid; grid-template-columns:1fr 1fr; min-height:100vh; width:100%; }
+
+  .auth-left { background:#1A3A5C; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:60px 48px; }
+  .auth-left-logo { font-family:'Playfair Display',serif; font-size:42px; color:#fff; letter-spacing:2px; margin-bottom:12px; }
+  .auth-left-tag { font-size:15px; color:rgba(255,255,255,0.6); text-align:center; margin-bottom:48px; line-height:1.6; }
+  .auth-stats { display:grid; grid-template-columns:1fr 1fr; gap:14px; width:100%; max-width:320px; }
+  .auth-stat { background:rgba(255,255,255,0.07); border-radius:10px; padding:18px 16px; text-align:center; }
+  .auth-stat-value { font-size:22px; font-weight:700; color:#fff; margin-bottom:4px; }
+  .auth-stat-label { font-size:12px; color:rgba(255,255,255,0.5); }
+
+  .auth-right { display:flex; align-items:center; justify-content:center; padding:48px 40px; background:#fff; overflow-y:auto; }
+  .auth-card { width:100%; max-width:400px; }
+  .auth-title { font-size:26px; font-weight:700; color:#1A3A5C; margin-bottom:6px; }
+  .auth-subtitle { font-size:14px; color:#6B7A8D; margin-bottom:28px; }
+
+  .form-group { margin-bottom:16px; }
+  .form-label { display:block; font-size:12px; font-weight:600; color:#6B7A8D; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px; }
+  .form-control { width:100%; padding:11px 14px; border:1.5px solid #DDE3EA; border-radius:8px; font-size:14px; font-family:'DM Sans',sans-serif; color:#1C2833; transition:border-color 0.15s; outline:none; }
+  .form-control:focus { border-color:#2E6DA4; box-shadow:0 0 0 3px rgba(46,109,164,0.1); }
+
+  .password-hint { font-size:11px; color:#6B7A8D; margin-top:4px; }
+
+  .btn-submit { width:100%; padding:12px; background:#0F6E56; color:#fff; border:none; border-radius:8px; font-size:15px; font-weight:600; font-family:'DM Sans',sans-serif; cursor:pointer; transition:background 0.15s; margin-top:6px; }
+  .btn-submit:hover { background:#0a5240; }
+
+  .auth-switch { text-align:center; margin-top:20px; font-size:14px; color:#6B7A8D; }
+  .auth-switch a { color:#2E6DA4; font-weight:600; text-decoration:none; }
+  .auth-switch a:hover { text-decoration:underline; }
+
+  .error-box { background:#FDEAEA; border:1px solid #F5B8B8; border-radius:8px; padding:11px 14px; font-size:13px; color:#B03A2E; margin-bottom:20px; }
+
+  .terms { font-size:12px; color:#6B7A8D; text-align:center; margin-top:16px; line-height:1.5; }
+
+  @media(max-width:768px) {
+    .auth-wrapper { grid-template-columns:1fr; }
+    .auth-left { display:none; }
+    .auth-right { padding:40px 24px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="auth-wrapper">
+  <!-- Left branding panel -->
+  <div class="auth-left">
+    <div class="auth-left-logo">Fermi</div>
+    <div class="auth-left-tag">Join thousands of SMEs in Bangladesh<br>managing their business smarter</div>
+    <div class="auth-stats">
+      <div class="auth-stat">
+        <div class="auth-stat-value">7.9M</div>
+        <div class="auth-stat-label">SMEs in Bangladesh</div>
+      </div>
+      <div class="auth-stat">
+        <div class="auth-stat-value">32%</div>
+        <div class="auth-stat-label">Efficiency gain</div>
+      </div>
+      <div class="auth-stat">
+        <div class="auth-stat-value">30%</div>
+        <div class="auth-stat-label">Revenue increase</div>
+      </div>
+      <div class="auth-stat">
+        <div class="auth-stat-value">Free</div>
+        <div class="auth-stat-label">To get started</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right signup form -->
+  <div class="auth-right">
+    <div class="auth-card">
+      <div class="auth-title">Create your account 🚀</div>
+      <div class="auth-subtitle">Start managing your business with Fermi AI</div>
+
+      {% if error %}
+      <div class="error-box">{{ error }}</div>
+      {% endif %}
+
+      <form method="POST" action="/signup">
+        <div class="form-group">
+          <label class="form-label">Full Name</label>
+          <input class="form-control" type="text" name="name" placeholder="e.g. Tarif Chowdhury" required autofocus>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email Address</label>
+          <input class="form-control" type="email" name="email" placeholder="you@example.com" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input class="form-control" type="password" name="password" placeholder="Min. 6 characters" required minlength="6">
+          <div class="password-hint">Must be at least 6 characters long</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirm Password</label>
+          <input class="form-control" type="password" name="confirm_password" placeholder="Repeat your password" required>
+        </div>
+        <button type="submit" class="btn-submit">Create Account →</button>
+      </form>
+
+      <div class="terms">
+        By signing up, you agree to use Fermi responsibly.<br>Your data is stored securely.
+      </div>
+
+      <div class="auth-switch">
+        Already have an account? <a href="/login">Sign in</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
