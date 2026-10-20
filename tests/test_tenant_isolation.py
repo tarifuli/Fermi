@@ -55,6 +55,30 @@ class TenantIsolationTests(unittest.TestCase):
         with self.app_module.get_db() as db:
             self.assertIsNotNone(db.execute('SELECT id FROM products WHERE id=10').fetchone())
 
+    def test_invoice_ignores_forged_totals_and_prices(self):
+        self.as_user(1)
+        response = self.client.post('/invoices/create', json={
+            'invoice_number': 'FORGED-123', 'customer_name': 'A Customer',
+            'subtotal': 1, 'tax': 0, 'total': 1,
+            'items': [{'product_id': 9, 'product_name': 'Fake', 'quantity': 1,
+                       'unit_price': 0.01, 'total': 0.01}]
+        })
+        self.assertTrue(response.get_json()['success'])
+        with self.app_module.get_db() as db:
+            invoice = db.execute('SELECT * FROM invoices WHERE id=?',
+                                 (response.get_json()['invoice_id'],)).fetchone()
+        self.assertEqual(invoice['subtotal'], 100)
+        self.assertEqual(invoice['tax'], 5)
+        self.assertEqual(invoice['total'], 105)
+
+    def test_cross_business_invoice_product_rejected(self):
+        self.as_user(1)
+        response = self.client.post('/invoices/create', json={
+            'customer_name': 'A Customer',
+            'items': [{'product_id': 10, 'quantity': 1}]
+        })
+        self.assertEqual(response.status_code, 400)
+
     def test_no_business_cannot_create_product(self):
         with self.client.session_transaction() as session:
             session['user_id'] = 999
