@@ -92,7 +92,7 @@ def init_db():
             db.execute(f'CREATE INDEX IF NOT EXISTS idx_{table}_business ON {table}(business_id)')
         count = db.execute('SELECT COUNT(*) FROM products').fetchone()[0]
         if count == 0:
-            db.executemany('INSERT INTO products (name, sku, category, price, stock, business_id) VALUES (?,?,?,?,?,?)', [
+            db.executemany('INSERT INTO products (name, sku, category, price, stock) VALUES (?,?,?,?,?)', [
                 ('Premium Leather Bag',  'PLB-001', 'Bags',        2500, 45),
                 ('Classic Wallet',       'CW-002',  'Accessories', 850,  120),
                 ('Business Card Holder', 'BCH-003', 'Accessories', 450,  80),
