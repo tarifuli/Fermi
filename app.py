@@ -92,7 +92,7 @@ def init_db():
             db.execute(f'CREATE INDEX IF NOT EXISTS idx_{table}_business ON {table}(business_id)')
         count = db.execute('SELECT COUNT(*) FROM products').fetchone()[0]
         if count == 0:
-            db.executemany('INSERT INTO products (name, sku, category, price, stock) VALUES (?,?,?,?,?)', [
+            db.executemany('INSERT INTO products (name, sku, category, price, stock, business_id) VALUES (?,?,?,?,?,?)', [
                 ('Premium Leather Bag',  'PLB-001', 'Bags',        2500, 45),
                 ('Classic Wallet',       'CW-002',  'Accessories', 850,  120),
                 ('Business Card Holder', 'BCH-003', 'Accessories', 450,  80),
@@ -311,10 +311,13 @@ def products():
 @login_required
 def add_product():
     d = request.json
+    business_id, error = require_business()
+    if error:
+        return error
     try:
         with get_db() as db:
             db.execute('INSERT INTO products (name, sku, category, price, stock) VALUES (?,?,?,?,?)',
-                       (d['name'], d['sku'], d['category'], float(d['price']), int(d['stock'])))
+                       (d['name'], d['sku'], d['category'], float(d['price']), int(d['stock']), business_id))
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
@@ -323,10 +326,13 @@ def add_product():
 @login_required
 def edit_product(pid):
     d = request.json
+    business_id, error = require_business()
+    if error:
+        return error
     try:
         with get_db() as db:
-            db.execute('UPDATE products SET name=?, sku=?, category=?, price=?, stock=? WHERE id=?',
-                       (d['name'], d['sku'], d['category'], float(d['price']), int(d['stock']), pid))
+            db.execute('UPDATE products SET name=?, sku=?, category=?, price=?, stock=? WHERE id=? AND business_id=?',
+                       (d['name'], d['sku'], d['category'], float(d['price']), int(d['stock']), pid, business_id))
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
@@ -335,7 +341,10 @@ def edit_product(pid):
 @login_required
 def delete_product(pid):
     with get_db() as db:
-        db.execute('DELETE FROM products WHERE id=?', (pid,))
+    business_id, error = require_business()
+    if error:
+        return error
+        db.execute('DELETE FROM products WHERE id=? AND business_id=?', (pid, business_id))
     return jsonify({'success': True})
 
 @app.route('/api/products')
@@ -363,20 +372,25 @@ def new_invoice():
 @login_required
 def create_invoice():
     d = request.json
+    business_id, error = require_business()
+    if error:
+        return error
     try:
         with get_db() as db:
-            db.execute('INSERT INTO invoices (invoice_number, customer_name, customer_email, customer_phone, subtotal, tax, total, status, notes) VALUES (?,?,?,?,?,?,?,?,?)',
+            db.execute('INSERT INTO invoices (invoice_number, customer_name, customer_email, customer_phone, subtotal, tax, total, status, notes, business_id) VALUES (?,?,?,?,?,?,?,?,?,?)',
                        (d['invoice_number'], d['customer_name'], d.get('customer_email',''),
                         d.get('customer_phone',''), d['subtotal'], d['tax'], d['total'],
-                        d.get('status','paid'), d.get('notes','')))
+                        d.get('status','paid'), d.get('notes',''), business_id))
             inv_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
             for item in d['items']:
                 db.execute('INSERT INTO invoice_items (invoice_id, product_id, product_name, quantity, unit_price, total) VALUES (?,?,?,?,?,?)',
                            (inv_id, item.get('product_id'), item['product_name'],
                             item['quantity'], item['unit_price'], item['total']))
                 if item.get('product_id'):
-                    db.execute('UPDATE products SET stock = stock - ? WHERE id=?',
-                               (item['quantity'], item['product_id']))
+                    updated = db.execute('UPDATE products SET stock = stock - ? WHERE id=? AND business_id=? AND stock >= ?',
+                               (item['quantity'], item['product_id'], business_id, item['quantity']))
+                    if updated.rowcount != 1:
+                        raise ValueError('Product unavailable or insufficient stock')
         return jsonify({'success': True, 'invoice_id': inv_id})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
