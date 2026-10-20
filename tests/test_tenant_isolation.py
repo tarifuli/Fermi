@@ -79,6 +79,32 @@ class TenantIsolationTests(unittest.TestCase):
         })
         self.assertEqual(response.status_code, 400)
 
+    def test_manual_item_name_price_invoice(self):
+        self.as_user(1)
+        response = self.client.post('/invoices/create', json={
+            'customer_name': 'Walk-in customer',
+            'items': [{'product_id': None, 'product_name': 'Custom repair',
+                       'quantity': 2, 'unit_price': 175.50}]
+        })
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        invoice_id = response.get_json()['invoice_id']
+        with self.app_module.get_db() as db:
+            item = db.execute('SELECT * FROM invoice_items WHERE invoice_id=?', (invoice_id,)).fetchone()
+            invoice = db.execute('SELECT * FROM invoices WHERE id=?', (invoice_id,)).fetchone()
+        self.assertEqual(item['product_name'], 'Custom repair')
+        self.assertIsNone(item['product_id'])
+        self.assertEqual(invoice['subtotal'], 351)
+        self.assertEqual(invoice['total'], 368.55)
+
+    def test_manual_item_rejects_negative_price(self):
+        self.as_user(1)
+        response = self.client.post('/invoices/create', json={
+            'customer_name': 'Walk-in customer',
+            'items': [{'product_id': None, 'product_name': 'Custom',
+                       'quantity': 1, 'unit_price': -50}]
+        })
+        self.assertEqual(response.status_code, 400)
+
     def test_no_business_cannot_create_product(self):
         with self.client.session_transaction() as session:
             session['user_id'] = 999
