@@ -105,6 +105,27 @@ class TenantIsolationTests(unittest.TestCase):
         })
         self.assertEqual(response.status_code, 400)
 
+    def test_pending_manual_invoice(self):
+        self.as_user(1)
+        response = self.client.post('/invoices/create', json={
+            'customer_name': 'Pending buyer', 'status': 'pending',
+            'items': [{'product_id': None, 'product_name': 'Service',
+                       'quantity': 1, 'unit_price': 200}]
+        })
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        with self.app_module.get_db() as db:
+            invoice = db.execute('SELECT status FROM invoices WHERE id=?',
+                                 (response.get_json()['invoice_id'],)).fetchone()
+        self.assertEqual(invoice['status'], 'pending')
+
+    def test_dashboard_invites_user_without_business(self):
+        with self.client.session_transaction() as session:
+            session['user_id'] = 999
+            session['user_name'] = 'Explorer'
+        response = self.client.get('/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Set up my business', response.data)
+
     def test_no_business_cannot_create_product(self):
         with self.client.session_transaction() as session:
             session['user_id'] = 999
