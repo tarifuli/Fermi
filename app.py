@@ -298,6 +298,7 @@ def require_business():
 def dashboard():
     business_id = current_business_id()
     return render_template('dashboard.html', stats=get_dashboard_stats(business_id),
+                           has_business=business_id is not None,
                            sales_7=get_sales_data(7, business_id)[:5], sales_30=get_sales_data(30, business_id)[:5])
 
 @app.route('/products')
@@ -415,11 +416,14 @@ def create_invoice():
             subtotal = subtotal.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
             tax = (subtotal * Decimal('0.05')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
             total = subtotal + tax
+            status = d.get('status', 'paid')
+            if status not in ('paid', 'pending'):
+                return jsonify({'success': False, 'error': 'Invalid invoice status'}), 400
             invoice_number = next_invoice_number(business_id)
             db.execute('INSERT INTO invoices (invoice_number, customer_name, customer_email, customer_phone, subtotal, tax, total, status, notes, business_id) VALUES (?,?,?,?,?,?,?,?,?,?)',
                        (invoice_number, d['customer_name'].strip(), d.get('customer_email',''),
                         d.get('customer_phone',''), float(subtotal), float(tax), float(total),
-                        'paid', d.get('notes',''), business_id))
+                        status, d.get('notes',''), business_id))
             inv_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
             for product_id, name, quantity, price, line_total in line_items:
                 if product_id is not None:
