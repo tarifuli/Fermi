@@ -51,7 +51,7 @@ def init_db():
                 password TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
-            CREATE TABLE IF NOT EXISTS products (
+            CREATE TABLE IF NOT EXISTS businesses (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                name TEXT NOT NULL,\n                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n            );\n            CREATE TABLE IF NOT EXISTS business_memberships (\n                business_id INTEGER NOT NULL,\n                user_id INTEGER NOT NULL,\n                role TEXT NOT NULL DEFAULT 'owner',\n                PRIMARY KEY (business_id, user_id),\n                FOREIGN KEY (business_id) REFERENCES businesses(id),\n                FOREIGN KEY (user_id) REFERENCES users(id)\n            );\n            CREATE TABLE IF NOT EXISTS products (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 sku TEXT UNIQUE NOT NULL,
@@ -227,6 +227,50 @@ def signup():
 def logout():
     session.clear()
     return redirect(url_for('login'))
+
+# ── BUSINESS PROFILE FOUNDATION ─────────────────────────────────────────────
+@app.route('/business/setup', methods=['GET', 'POST'])
+@login_required
+def business_setup():
+    """Optional business setup; existing dashboard remains available after signup."""
+    with get_db() as db:
+        existing = db.execute(
+            'SELECT b.id, b.name FROM businesses b JOIN business_memberships m '
+            'ON m.business_id=b.id WHERE m.user_id=? ORDER BY b.id LIMIT 1',
+            (session['user_id'],)
+        ).fetchone()
+    if existing:
+        return redirect(url_for('business_profile'))
+    error = None
+    if request.method == 'POST':
+        name = request.form.get('business_name', '').strip()
+        if not 1 <= len(name) <= 120:
+            error = 'Enter a business name of up to 120 characters.'
+        else:
+            with get_db() as db:
+                cur = db.execute('INSERT INTO businesses (name) VALUES (?)', (name,))
+                db.execute(
+                    'INSERT INTO business_memberships (business_id,user_id,role) VALUES (?,?,?)',
+                    (cur.lastrowid, session['user_id'], 'owner')
+                )
+            return redirect(url_for('business_profile'))
+    return render_template('business_setup.html', error=error)
+
+
+@app.route('/business/profile')
+@login_required
+def business_profile():
+    with get_db() as db:
+        business = db.execute(
+            'SELECT b.id, b.name, b.created_at FROM businesses b '
+            'JOIN business_memberships m ON m.business_id=b.id '
+            'WHERE m.user_id=? ORDER BY b.id LIMIT 1',
+            (session['user_id'],)
+        ).fetchone()
+    if not business:
+        return redirect(url_for('business_setup'))
+    return render_template('business_profile.html', business=dict(business))
+
 
 # ── MAIN ROUTES (protected) ──────────────────────────────────────────────────
 @app.route('/')
