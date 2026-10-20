@@ -1,12 +1,16 @@
 """Run with: python -m unittest discover -s tests"""
 import os
+import sys
 import tempfile
+from pathlib import Path
 import unittest
 
 class TenantIsolationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tempdir = tempfile.TemporaryDirectory()
+        cls.original_cwd = os.getcwd()
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
         os.chdir(cls.tempdir.name)
         os.environ['SECRET_KEY'] = 'test-only-secret'
         import app
@@ -26,6 +30,7 @@ class TenantIsolationTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        os.chdir(cls.original_cwd)
         cls.tempdir.cleanup()
 
     def as_user(self, user_id):
@@ -41,14 +46,14 @@ class TenantIsolationTests(unittest.TestCase):
 
     def test_other_business_invoice_pdf_is_denied(self):
         self.as_user(1)
-        self.assertEqual(self.client.get('/invoices/2/pdf').status_code, 404)
+        self.assertEqual(self.client.get('/invoices/26/pdf').status_code, 404)
 
     def test_other_business_product_cannot_be_deleted(self):
         self.as_user(1)
-        response = self.client.post('/products/delete/2')
+        response = self.client.post('/products/delete/10')
         self.assertFalse(response.get_json()['success'])
         with self.app_module.get_db() as db:
-            self.assertIsNotNone(db.execute('SELECT id FROM products WHERE id=2').fetchone())
+            self.assertIsNotNone(db.execute('SELECT id FROM products WHERE id=10').fetchone())
 
     def test_no_business_cannot_create_product(self):
         with self.client.session_transaction() as session:
