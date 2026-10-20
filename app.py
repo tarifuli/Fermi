@@ -365,17 +365,22 @@ def invoices():
 @login_required
 def new_invoice():
     with get_db() as db:
-        prods = db.execute('SELECT * FROM products ORDER BY name').fetchall()
+        prods = db.execute('SELECT * FROM products WHERE business_id=? ORDER BY name', (current_business_id(),)).fetchall()
     return render_template('new_invoice.html', invoice_number=next_invoice_number(current_business_id()), products=[dict(p) for p in prods])
 
 @app.route('/invoices/create', methods=['POST'])
 @login_required
 def create_invoice():
-    d = request.json
+    d = request.get_json(silent=True) or {}
     business_id, error = require_business()
     if error:
         return error
     try:
+        if not d.get('items') or not d.get('customer_name', '').strip():
+            return jsonify({'success': False, 'error': 'Customer and items are required'}), 400
+        for item in d['items']:
+            if not isinstance(item.get('quantity'), int) or item['quantity'] <= 0 or not item.get('product_id'):
+                return jsonify({'success': False, 'error': 'Valid product and positive quantity required'}), 400
         with get_db() as db:
             db.execute('INSERT INTO invoices (invoice_number, customer_name, customer_email, customer_phone, subtotal, tax, total, status, notes, business_id) VALUES (?,?,?,?,?,?,?,?,?,?)',
                        (d['invoice_number'], d['customer_name'], d.get('customer_email',''),
