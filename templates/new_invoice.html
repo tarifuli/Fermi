@@ -149,11 +149,11 @@ function addItemRow() {
   row.innerHTML = `
     <td>
       <select class="form-control" onchange="onProductSelect(this, '${id}')" style="font-size:12px;">
-        <option value="">Select product...</option>
+        <option value="custom" selected>Enter product name and price</option>
         ${optionsHTML}
-        <option value="custom">Custom item...</option>
+
       </select>
-      <input class="form-control" id="${id}-custom-name" placeholder="Item name" style="display:none;margin-top:4px;font-size:12px;">
+      <input class="form-control" id="${id}-custom-name" placeholder="Type product or service name" style="display:block;margin-top:4px;font-size:12px;">
     </td>
     <td><input class="form-control" id="${id}-qty" type="number" min="1" value="1" oninput="recalcRow('${id}')" style="font-size:12px;"></td>
     <td><input class="form-control" id="${id}-price" type="number" min="0" step="0.01" value="0" oninput="recalcRow('${id}')" style="font-size:12px;"></td>
@@ -229,11 +229,11 @@ async function saveInvoice() {
       productName = sel.options[sel.selectedIndex]?.dataset?.name || '';
     }
 
-    const qty   = parseFloat(row.querySelectorAll('input[type=number]')[0].value) || 0;
+    const qty   = Number(row.querySelectorAll('input[type=number]')[0].value);
     const price = parseFloat(row.querySelectorAll('input[type=number]')[1].value) || 0;
 
-    if (!productName || qty <= 0 || price <= 0) { valid = false; return; }
-    items.push({ product_id: productId, product_name: productName, quantity: qty, unit_price: price, total: qty * price });
+    if (!productName || !Number.isInteger(qty) || qty <= 0 || !Number.isFinite(price) || price <= 0) { valid = false; return; }
+    items.push({ product_id: productId ? Number(productId) : null, product_name: productName, quantity: qty, unit_price: price, total: qty * price });
   });
 
   if (!valid) return showAlert('Please fill all item details (name, qty, price).', 'error');
