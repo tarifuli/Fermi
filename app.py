@@ -85,6 +85,11 @@ def init_db():
                 FOREIGN KEY (product_id) REFERENCES products(id)
             );
         ''')
+        for table in ('products', 'invoices'):
+            columns = {row['name'] for row in db.execute(f'PRAGMA table_info({table})')}
+            if 'business_id' not in columns:
+                db.execute(f'ALTER TABLE {table} ADD COLUMN business_id INTEGER REFERENCES businesses(id)')
+            db.execute(f'CREATE INDEX IF NOT EXISTS idx_{table}_business ON {table}(business_id)')
         count = db.execute('SELECT COUNT(*) FROM products').fetchone()[0]
         if count == 0:
             db.executemany('INSERT INTO products (name, sku, category, price, stock) VALUES (?,?,?,?,?)', [
@@ -133,38 +138,38 @@ def init_db():
 init_db()
 
 # ── HELPERS ──────────────────────────────────────────────────────────────────
-def next_invoice_number():
+def next_invoice_number(business_id=None):
     with get_db() as db:
-        last = db.execute("SELECT invoice_number FROM invoices ORDER BY id DESC LIMIT 1").fetchone()
+        last = db.execute("SELECT invoice_number FROM invoices WHERE business_id=? ORDER BY id DESC LIMIT 1", (business_id,)).fetchone()
         if last:
             try: num = int(last['invoice_number'].split('-')[1]) + 1
             except: num = 1001
         else: num = 1001
         return f"FRM-{num}"
 
-def get_sales_data(days=30):
+def get_sales_data(days=30, business_id=None):
     with get_db() as db:
         since = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
         items = db.execute('''
             SELECT ii.product_name, SUM(ii.quantity) as qty, SUM(ii.total) as revenue
             FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id
-            WHERE DATE(i.created_at) >= ? AND i.status != 'cancelled'
+            WHERE DATE(i.created_at) >= ? AND i.status != 'cancelled' AND i.business_id=?
             GROUP BY ii.product_name ORDER BY qty DESC
-        ''', (since,)).fetchall()
+        ''', (since, business_id)).fetchall()
         return [dict(r) for r in items]
 
-def get_dashboard_stats():
+def get_dashboard_stats(business_id=None):
     with get_db() as db:
         month_start   = datetime.now().replace(day=1).strftime('%Y-%m-%d')
-        total_revenue = db.execute("SELECT COALESCE(SUM(total),0) FROM invoices WHERE status='paid'").fetchone()[0]
-        month_revenue = db.execute("SELECT COALESCE(SUM(total),0) FROM invoices WHERE status='paid' AND DATE(created_at)>=?", (month_start,)).fetchone()[0]
-        total_invoices= db.execute("SELECT COUNT(*) FROM invoices").fetchone()[0]
-        low_stock     = db.execute("SELECT COUNT(*) FROM products WHERE stock < 20").fetchone()[0]
-        total_products= db.execute("SELECT COUNT(*) FROM products").fetchone()[0]
+        total_revenue = db.execute("SELECT COALESCE(SUM(total),0) FROM invoices WHERE status='paid' AND business_id=?", (business_id,)).fetchone()[0]
+        month_revenue = db.execute("SELECT COALESCE(SUM(total),0) FROM invoices WHERE status='paid' AND DATE(created_at)>=? AND business_id=?", (month_start, business_id)).fetchone()[0]
+        total_invoices= db.execute("SELECT COUNT(*) FROM invoices WHERE business_id=?", (business_id,)).fetchone()[0]
+        low_stock     = db.execute("SELECT COUNT(*) FROM products WHERE stock < 20 AND business_id=?", (business_id,)).fetchone()[0]
+        total_products= db.execute("SELECT COUNT(*) FROM products WHERE business_id=?", (business_id,)).fetchone()[0]
         daily = []
         for i in range(6, -1, -1):
             d   = (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d')
-            rev = db.execute("SELECT COALESCE(SUM(total),0) FROM invoices WHERE DATE(created_at)=? AND status='paid'", (d,)).fetchone()[0]
+            rev = db.execute("SELECT COALESCE(SUM(total),0) FROM invoices WHERE DATE(created_at)=? AND status='paid' AND business_id=?", (d, business_id)).fetchone()[0]
             daily.append({'date': d, 'revenue': round(rev, 2)})
         return {'total_revenue': round(total_revenue,2), 'month_revenue': round(month_revenue,2),
                 'total_invoices': total_invoices, 'low_stock': low_stock,
@@ -272,18 +277,34 @@ def business_profile():
     return render_template('business_profile.html', business=dict(business))
 
 
+def current_business_id():
+    if 'user_id' not in session:
+        return None
+    with get_db() as db:
+        row = db.execute('SELECT business_id FROM business_memberships WHERE user_id=? ORDER BY business_id LIMIT 1', (session['user_id'],)).fetchone()
+    return row['business_id'] if row else None
+
+
+def require_business():
+    business_id = current_business_id()
+    if business_id is None:
+        return None, (jsonify({'success': False, 'error': 'Set up a business to use this feature.'}), 403)
+    return business_id, None
+
+
 # ── MAIN ROUTES (protected) ──────────────────────────────────────────────────
 @app.route('/')
 @login_required
 def dashboard():
-    return render_template('dashboard.html', stats=get_dashboard_stats(),
-                           sales_7=get_sales_data(7)[:5], sales_30=get_sales_data(30)[:5])
+    business_id = current_business_id()
+    return render_template('dashboard.html', stats=get_dashboard_stats(business_id),
+                           sales_7=get_sales_data(7, business_id)[:5], sales_30=get_sales_data(30, business_id)[:5])
 
 @app.route('/products')
 @login_required
 def products():
     with get_db() as db:
-        prods = db.execute('SELECT * FROM products ORDER BY name').fetchall()
+        prods = db.execute('SELECT * FROM products WHERE business_id=? ORDER BY name', (current_business_id(),)).fetchall()
     return render_template('products.html', products=[dict(p) for p in prods])
 
 @app.route('/products/add', methods=['POST'])
@@ -328,7 +349,7 @@ def api_products():
 @login_required
 def invoices():
     with get_db() as db:
-        invs = db.execute('SELECT * FROM invoices ORDER BY created_at DESC').fetchall()
+        invs = db.execute('SELECT * FROM invoices WHERE business_id=? ORDER BY created_at DESC', (current_business_id(),)).fetchall()
     return render_template('invoices.html', invoices=[dict(i) for i in invs])
 
 @app.route('/invoices/new')
@@ -336,7 +357,7 @@ def invoices():
 def new_invoice():
     with get_db() as db:
         prods = db.execute('SELECT * FROM products ORDER BY name').fetchall()
-    return render_template('new_invoice.html', invoice_number=next_invoice_number(), products=[dict(p) for p in prods])
+    return render_template('new_invoice.html', invoice_number=next_invoice_number(current_business_id()), products=[dict(p) for p in prods])
 
 @app.route('/invoices/create', methods=['POST'])
 @login_required
@@ -364,7 +385,7 @@ def create_invoice():
 @login_required
 def view_invoice(inv_id):
     with get_db() as db:
-        inv   = db.execute('SELECT * FROM invoices WHERE id=?', (inv_id,)).fetchone()
+        inv   = db.execute('SELECT * FROM invoices WHERE id=? AND business_id=?', (inv_id, current_business_id())).fetchone()
         items = db.execute('SELECT * FROM invoice_items WHERE invoice_id=?', (inv_id,)).fetchall()
     if not inv: return redirect(url_for('invoices'))
     return render_template('view_invoice.html', invoice=dict(inv), items=[dict(i) for i in items])
@@ -412,12 +433,15 @@ def chatbot():
 @login_required
 def api_chat():
     user_message = request.json.get('message', '')
-    stats    = get_dashboard_stats()
-    sales_7  = get_sales_data(7)
-    sales_30 = get_sales_data(30)
+    business_id, error = require_business()
+    if error:
+        return error
+    stats    = get_dashboard_stats(business_id)
+    sales_7  = get_sales_data(7, business_id)
+    sales_30 = get_sales_data(30, business_id)
     with get_db() as db:
-        all_products    = [dict(p) for p in db.execute('SELECT * FROM products ORDER BY stock ASC').fetchall()]
-        recent_invoices = [dict(i) for i in db.execute('SELECT * FROM invoices ORDER BY created_at DESC LIMIT 10').fetchall()]
+        all_products    = [dict(p) for p in db.execute('SELECT * FROM products WHERE business_id=? ORDER BY stock ASC', (business_id,)).fetchall()]
+        recent_invoices = [dict(i) for i in db.execute('SELECT * FROM invoices WHERE business_id=? ORDER BY created_at DESC LIMIT 10', (business_id,)).fetchall()]
     low_stock = [p for p in all_products if p['stock'] < 20]
     context = f"""You are Fermi AI, a business intelligence assistant for an SME in Bangladesh.
 You have access to REAL-TIME business data. Always answer based on this data.
