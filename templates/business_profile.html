@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<section style="max-width:680px;margin:3rem auto;padding:2rem">
+<h1>{{ business.name }}</h1>
+<p>Your business profile has been created.</p>
+<p>Inventory, invoices and analytics are not yet linked to this business. Do not enter private business data until isolation is complete.</p>
+<p><a href="{{ url_for('dashboard') }}">Back to dashboard</a></p>
+</section>
+{% endblock %}
