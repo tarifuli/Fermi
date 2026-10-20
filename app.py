@@ -316,7 +316,7 @@ def add_product():
         return error
     try:
         with get_db() as db:
-            db.execute('INSERT INTO products (name, sku, category, price, stock) VALUES (?,?,?,?,?)',
+            db.execute('INSERT INTO products (name, sku, category, price, stock, business_id) VALUES (?,?,?,?,?,?)',
                        (d['name'], d['sku'], d['category'], float(d['price']), int(d['stock']), business_id))
         return jsonify({'success': True})
     except Exception as e:
@@ -340,18 +340,18 @@ def edit_product(pid):
 @app.route('/products/delete/<int:pid>', methods=['POST'])
 @login_required
 def delete_product(pid):
-    with get_db() as db:
     business_id, error = require_business()
     if error:
         return error
-        db.execute('DELETE FROM products WHERE id=? AND business_id=?', (pid, business_id))
-    return jsonify({'success': True})
+    with get_db() as db:
+        result = db.execute('DELETE FROM products WHERE id=? AND business_id=?', (pid, business_id))
+    return jsonify({'success': result.rowcount == 1})
 
 @app.route('/api/products')
 @login_required
 def api_products():
     with get_db() as db:
-        prods = db.execute('SELECT * FROM products ORDER BY name').fetchall()
+        prods = db.execute('SELECT * FROM products WHERE business_id=? ORDER BY name', (current_business_id(),)).fetchall()
     return jsonify([dict(p) for p in prods])
 
 @app.route('/invoices')
@@ -408,7 +408,10 @@ def view_invoice(inv_id):
 @login_required
 def download_pdf(inv_id):
     with get_db() as db:
-        inv   = dict(db.execute('SELECT * FROM invoices WHERE id=?', (inv_id,)).fetchone())
+        row = db.execute('SELECT * FROM invoices WHERE id=? AND business_id=?', (inv_id, current_business_id())).fetchone()
+        if row is None:
+            return 'Invoice not found', 404
+        inv = dict(row)
         items = [dict(i) for i in db.execute('SELECT * FROM invoice_items WHERE invoice_id=?', (inv_id,)).fetchall()]
     buffer = io.BytesIO()
     doc    = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
