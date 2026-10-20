@@ -380,23 +380,38 @@ def create_invoice():
         if not isinstance(items, list) or not items or not isinstance(d.get('customer_name'), str) or not d['customer_name'].strip():
             return jsonify({'success': False, 'error': 'Customer and items are required'}), 400
         if any(not isinstance(it, dict) or type(it.get('quantity')) is not int or it['quantity'] <= 0
-               or type(it.get('product_id')) is not int for it in items):
-            return jsonify({'success': False, 'error': 'Valid product and positive quantity required'}), 400
-        from decimal import Decimal, ROUND_HALF_UP
+               or (it.get('product_id') is not None and type(it['product_id']) is not int) for it in items):
+            return jsonify({'success': False, 'error': 'Invalid item or quantity'}), 400
+        from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
         with get_db() as db:
             line_items = []
             subtotal = Decimal('0.00')
             for item in items:
-                product = db.execute('SELECT id, name, price, stock FROM products WHERE id=? AND business_id=?',
-                                     (item['product_id'], business_id)).fetchone()
-                if product is None or product['stock'] < item['quantity']:
-                    return jsonify({'success': False, 'error': 'Product unavailable or insufficient stock'}), 400
-                price = Decimal(str(product['price']))
-                if not price.is_finite() or price < 0:
-                    return jsonify({'success': False, 'error': 'Invalid product price'}), 400
+                product_id = item.get('product_id')
+                if product_id is not None:
+                    product = db.execute('SELECT id, name, price, stock FROM products WHERE id=? AND business_id=?',
+                                         (product_id, business_id)).fetchone()
+                    if product is None or product['stock'] < item['quantity']:
+                        return jsonify({'success': False, 'error': 'Product unavailable or insufficient stock'}), 400
+                    name = product['name']
+                    price = Decimal(str(product['price']))
+                else:
+                    product = None
+                    name = item.get('product_name', '')
+                    if not isinstance(name, str) or not name.strip() or len(name.strip()) > 200:
+                        return jsonify({'success': False, 'error': 'Enter a custom item name (up to 200 characters)'}), 400
+                    name = name.strip()
+                    try:
+                        price = Decimal(str(item['unit_price']))
+                    except (InvalidOperation, KeyError, TypeError, ValueError):
+                        return jsonify({'success': False, 'error': 'Invalid custom item price'}), 400
+                    if price.as_tuple().exponent < -2:
+                        return jsonify({'success': False, 'error': 'Price may have at most two decimal places'}), 400
+                if not price.is_finite() or price <= 0 or price > Decimal('1000000000'):
+                    return jsonify({'success': False, 'error': 'Invalid item price'}), 400
                 line_total = (price * item['quantity']).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
                 subtotal += line_total
-                line_items.append((product, item['quantity'], price, line_total))
+                line_items.append((product_id, name, item['quantity'], price, line_total))
             subtotal = subtotal.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
             tax = (subtotal * Decimal('0.05')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
             total = subtotal + tax
@@ -406,13 +421,14 @@ def create_invoice():
                         d.get('customer_phone',''), float(subtotal), float(tax), float(total),
                         'paid', d.get('notes',''), business_id))
             inv_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
-            for product, quantity, price, line_total in line_items:
-                updated = db.execute('UPDATE products SET stock=stock-? WHERE id=? AND business_id=? AND stock>=?',
-                                     (quantity, product['id'], business_id, quantity))
-                if updated.rowcount != 1:
-                    raise ValueError('Product unavailable or insufficient stock')
+            for product_id, name, quantity, price, line_total in line_items:
+                if product_id is not None:
+                    updated = db.execute('UPDATE products SET stock=stock-? WHERE id=? AND business_id=? AND stock>=?',
+                                         (quantity, product_id, business_id, quantity))
+                    if updated.rowcount != 1:
+                        raise ValueError('Product unavailable or insufficient stock')
                 db.execute('INSERT INTO invoice_items (invoice_id, product_id, product_name, quantity, unit_price, total) VALUES (?,?,?,?,?,?)',
-                           (inv_id, product['id'], product['name'], quantity, float(price), float(line_total)))
+                           (inv_id, product_id, name, quantity, float(price), float(line_total)))
         return jsonify({'success': True, 'invoice_id': inv_id})
     except (ValueError, TypeError, KeyError) as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
