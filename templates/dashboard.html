@@ -19,7 +19,7 @@
 {% block content %}
 <div class="page-header">
   <div>
-    <div class="page-title">Good day, Tarif 👋</div>
+    <div class="page-title">Good day, {{ session.get('user_name', 'there') }} 👋</div>
     <div style="font-size:13px;color:var(--muted);margin-top:2px;">Here's your business overview</div>
   </div>
   <a href="/invoices/new" class="btn btn-primary">
@@ -28,6 +28,16 @@
   </a>
 </div>
 
+{% if not has_business %}
+<div class="card" style="margin-bottom:20px;border:1px solid var(--sky);background:#f6faff;">
+  <div class="card-title" style="font-size:17px;margin-bottom:8px;">Welcome to Fermi</div>
+  <p style="font-size:13px;color:var(--muted);margin-bottom:14px;">
+    Explore the dashboard first. When you are ready to manage real products and invoices,
+    create your private business profile. No business data has been created yet.
+  </p>
+  <a href="{{ url_for('business_setup') }}" class="btn btn-primary">Set up my business</a>
+</div>
+{% endif %}
 <!-- Stats -->
 <div class="stats-grid">
   <div class="stat-card">
