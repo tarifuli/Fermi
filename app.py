@@ -8,11 +8,14 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 import anthropic
 import io
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
+app.secret_key = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
+if not os.environ.get('SECRET_KEY'):
+    app.logger.warning('SECRET_KEY is not configured; sessions will be invalidated on restart. Set it in production.')
 
-DATABASE = 'fermi.db'
+DATABASE = os.environ.get('DATABASE_PATH', 'fermi.db')
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', 'YOUR_API_KEY_HERE')
 
 @app.context_processor
@@ -24,7 +27,15 @@ with app.app_context():
 
 # ── AUTH HELPERS ─────────────────────────────────────────────────────────────
 def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+    return generate_password_hash(password)
+
+def verify_password(stored_hash, password):
+    """Accept legacy SHA-256 hashes, upgrading them after successful login."""
+    if not stored_hash or not password:
+        return False
+    if len(stored_hash) == 64 and all(c in '0123456789abcdef' for c in stored_hash.lower()):
+        return secrets.compare_digest(stored_hash, hashlib.sha256(password.encode()).hexdigest())
+    return check_password_hash(stored_hash, password)
 
 def login_required(f):
     from functools import wraps
@@ -181,7 +192,10 @@ def login():
         password = request.form.get('password', '')
         with get_db() as db:
             user = db.execute('SELECT * FROM users WHERE email=?', (email,)).fetchone()
-        if user and user['password'] == hash_password(password):
+        if user and verify_password(user['password'], password):
+            if len(user['password']) == 64:
+                with get_db() as db:
+                    db.execute('UPDATE users SET password=? WHERE id=?', (hash_password(password), user['id']))
             session['user_id']   = user['id']
             session['user_name'] = user['name']
             session['user_email']= user['email']
