@@ -350,6 +350,31 @@ def edit_product(pid):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
+@app.route('/products/adjust/<int:pid>', methods=['POST'])
+@login_required
+def adjust_product_stock(pid):
+    """Atomic, business-scoped stock correction; refuses negative stock."""
+    business_id, error = require_business()
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    try:
+        delta = int(data.get('delta'))
+        if isinstance(data.get('delta'), bool) or abs(delta) > 100000 or delta == 0:
+            raise ValueError()
+    except (ValueError, TypeError):
+        return jsonify({'success': False, 'error': 'Enter a non-zero whole-number adjustment.'}), 400
+    with get_db() as db:
+        result = db.execute(
+            'UPDATE products SET stock=stock+? WHERE id=? AND business_id=? AND stock+?>=0',
+            (delta, pid, business_id, delta)
+        )
+        if result.rowcount != 1:
+            return jsonify({'success': False, 'error': 'Product unavailable or insufficient stock.'}), 400
+        row = db.execute('SELECT stock FROM products WHERE id=? AND business_id=?', (pid, business_id)).fetchone()
+    return jsonify({'success': True, 'stock': row['stock']})
+
+
 @app.route('/products/delete/<int:pid>', methods=['POST'])
 @login_required
 def delete_product(pid):
