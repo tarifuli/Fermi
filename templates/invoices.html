@@ -28,7 +28,7 @@
         <tr data-search="{{ inv.invoice_number|lower }} {{ inv.customer_name|lower }}">
           <td style="font-weight:600;font-family:monospace;color:var(--blue);">{{ inv.invoice_number }}</td>
           <td style="font-weight:500;">{{ inv.customer_name }}</td>
-          <td style="color:var(--muted);font-size:12px;">{{ inv.created_at[:10] }}</td>
+          <td style="color:var(--muted);font-size:12px;">{{ inv.created_at|string|truncate(10, True, '') }}</td>
           <td style="font-weight:600;color:var(--teal);">৳{{ "{:,.2f}".format(inv.total) }}</td>
           <td><span class="badge badge-{{ inv.status }}">{{ inv.status|capitalize }}</span></td>
           <td style="display:flex;gap:6px;">
