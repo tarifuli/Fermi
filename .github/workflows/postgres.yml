@@ -1,0 +1,32 @@
+name: PostgreSQL integration
+on:
+  push:
+    branches: [feature/postgres-vercel-migration]
+  pull_request:
+jobs:
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: fermi_test
+          POSTGRES_USER: fermi
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fermi -d fermi_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://fermi:test_password@localhost:5432/fermi_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/postgresql/001_initial_schema.sql
+      - run: python -m unittest discover -s tests -p 'test_postgres_integration.py' -v
