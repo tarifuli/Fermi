@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file, session
 import sqlite3, json, os, hashlib, secrets
 from db_backend import get_db as connect_database
+from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -11,7 +12,10 @@ import anthropic
 import io
 
 app = Flask(__name__)
+if os.environ.get('VERCEL') and not os.environ.get('SECRET_KEY'):
+    raise RuntimeError('SECRET_KEY must be set for production')
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax', SESSION_COOKIE_SECURE=bool(os.environ.get('VERCEL')))
 
 DATABASE = os.environ.get('DATABASE_PATH', 'fermi.db')
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', 'YOUR_API_KEY_HERE')
@@ -25,7 +29,12 @@ with app.app_context():
 
 # ── AUTH HELPERS ─────────────────────────────────────────────────────────────
 def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+    return generate_password_hash(password)
+
+def verify_password(stored, password):
+    if len(stored) == 64 and all(c in '0123456789abcdef' for c in stored):
+        return secrets.compare_digest(stored, hashlib.sha256(password.encode()).hexdigest())
+    return check_password_hash(stored, password)
 
 def login_required(f):
     from functools import wraps
@@ -186,7 +195,10 @@ def login():
         password = request.form.get('password', '')
         with get_db() as db:
             user = db.execute('SELECT * FROM users WHERE email=?', (email,)).fetchone()
-        if user and user['password'] == hash_password(password):
+        if user and verify_password(user['password'], password):
+            if len(user['password']) == 64 and all(c in '0123456789abcdef' for c in user['password']):
+                with get_db() as db:
+                    db.execute('UPDATE users SET password=? WHERE id=?', (hash_password(password), user['id']))
             session['user_id']   = user['id']
             session['user_name'] = user['name']
             session['user_email']= user['email']
