@@ -538,33 +538,163 @@ def download_pdf(inv_id):
             return 'Invoice not found', 404
         inv = dict(row)
         items = [dict(i) for i in db.execute('SELECT * FROM invoice_items WHERE invoice_id=?', (inv_id,)).fetchall()]
+    # The PDF mirrors templates/view_invoice.html, using the same persisted invoice data.
+    # A fixed content width prevents the ReportLab tables from overflowing A4.
+    from xml.sax.saxutils import escape
+    from reportlab.platypus import KeepTogether, HRFlowable
+    from reportlab.lib.enums import TA_LEFT, TA_RIGHT, TA_CENTER
+
+    navy = colors.HexColor('#1A3A5C')
+    blue = colors.HexColor('#2E6DA4')
+    muted = colors.HexColor('#6B7A8D')
+    paper = colors.HexColor('#F4F6F9')
+    sky = colors.HexColor('#D6E8F7')
+    border = colors.HexColor('#DDE3EA')
+    green = colors.HexColor('#0F6E56')
     buffer = io.BytesIO()
-    doc    = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
-    story  = []
-    ts = ParagraphStyle('t', fontSize=24, fontName='Helvetica-Bold', textColor=colors.HexColor('#1A3A5C'), spaceAfter=4)
-    ss = ParagraphStyle('s', fontSize=10, fontName='Helvetica', textColor=colors.HexColor('#555'), spaceAfter=2)
-    ls = ParagraphStyle('l', fontSize=9,  fontName='Helvetica-Bold', textColor=colors.HexColor('#1A3A5C'))
-    vs = ParagraphStyle('v', fontSize=9,  fontName='Helvetica', textColor=colors.HexColor('#333'))
-    story.append(Paragraph("FERMI", ts))
-    story.append(Paragraph("AI-Powered SME Intelligence Platform — Dhaka, Bangladesh", ss))
-    story.append(Spacer(1, 0.2*inch))
-    story.append(Table([[Paragraph('INVOICE', ParagraphStyle('h',fontSize=16,fontName='Helvetica-Bold',textColor=colors.HexColor('#2E6DA4'))),'',Paragraph(f'Invoice #: {inv["invoice_number"]}',ls),''],[  '','',Paragraph(f'Date: {str(inv["created_at"])[:10]}',vs),''],[  '','',Paragraph(f'Status: {inv["status"].upper()}',vs),'']],colWidths=[2.3*inch,1.2*inch,2*inch,1.5*inch]))
-    story.append(Spacer(1,0.15*inch))
-    bt = Table([[Paragraph('BILL TO:',ls)],[Paragraph(inv['customer_name'],ParagraphStyle('cn',fontSize=11,fontName='Helvetica-Bold'))],[Paragraph(inv.get('customer_email') or '',vs)],[Paragraph(inv.get('customer_phone') or '',vs)]],colWidths=[7.0*inch])
-    bt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#D6E8F7')),('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4),('LEFTPADDING',(0,0),(-1,-1),8)]))
-    story.append(bt); story.append(Spacer(1,0.15*inch))
-    idata = [['#','Product','Qty','Unit Price (BDT)','Total (BDT)']]+[[str(n+1),it['product_name'],str(it['quantity']),f"{it['unit_price']:,.2f}",f"{it['total']:,.2f}"] for n,it in enumerate(items)]
-    it2 = Table(idata, colWidths=[0.4*inch,2.9*inch,0.7*inch,1.5*inch,1.5*inch])
-    it2.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#1A3A5C')),('TEXTCOLOR',(0,0),(-1,0),colors.white),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,-1),9),('ALIGN',(2,0),(-1,-1),'RIGHT'),('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#F5F5F3')]),('GRID',(0,0),(-1,-1),0.5,colors.HexColor('#CCC')),('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6),('LEFTPADDING',(0,0),(-1,-1),8)]))
-    story.append(it2); story.append(Spacer(1,0.15*inch))
-    tot = Table([['','Subtotal:',f"BDT {inv['subtotal']:,.2f}"],['','Tax (5%):',f"BDT {inv['tax']:,.2f}"],['','TOTAL:',f"BDT {inv['total']:,.2f}"]],colWidths=[4.0*inch,1.5*inch,1.5*inch])
-    tot.setStyle(TableStyle([('ALIGN',(1,0),(-1,-1),'RIGHT'),('FONTNAME',(1,2),(-1,2),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,-1),9),('BACKGROUND',(0,2),(-1,2),colors.HexColor('#D6E8F7')),('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]))
-    story.append(tot)
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4, rightMargin=42, leftMargin=42,
+        topMargin=45, bottomMargin=45, title='Invoice ' + str(inv['invoice_number']),
+        author='Fermi'
+    )
+    width = A4[0] - 84
+    story = []
+    def style(name, size=10, color=navy, bold=False, align=TA_LEFT, leading=None):
+        return ParagraphStyle(
+            name, fontName='Helvetica-Bold' if bold else 'Helvetica',
+            fontSize=size, leading=leading or size * 1.45,
+            textColor=color, alignment=align, spaceAfter=0
+        )
+    def p(value, st):
+        return Paragraph(escape(str(value or '')), st)
+    def money(value):
+        return f"{float(value):,.2f}"
+    def small_gap(points):
+        story.append(Spacer(1, points))
+
+    brand_title = style('brand', 24, navy, True)
+    brand_sub = style('brand-sub', 9, muted)
+    invoice_title = style('invoice-title', 19, blue, True, TA_RIGHT)
+    invoice_num = style('invoice-num', 12, navy, True, TA_RIGHT)
+    invoice_meta = style('invoice-meta', 9.5, muted, False, TA_RIGHT)
+    status_style = style('invoice-status', 9, green, True, TA_RIGHT)
+
+    left_header = [
+        p('Fermi', brand_title),
+        p('AI-Powered SME Intelligence Platform', brand_sub),
+        p('Dhaka, Bangladesh', brand_sub),
+    ]
+    right_header = [
+        p('INVOICE', invoice_title),
+        p('#' + str(inv['invoice_number']), invoice_num),
+        p('Date: ' + str(inv['created_at'])[:10], invoice_meta),
+        p(str(inv['status']).capitalize(), status_style),
+    ]
+    header = Table([[left_header, right_header]], colWidths=[width * .51, width * .49])
+    header.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(header)
+    small_gap(30)
+
+    label_style = style('party-label', 8, muted, True)
+    party_name = style('party-name', 11, navy, True)
+    party_sub = style('party-sub', 9, muted)
+    customer_contact = (inv.get('customer_email') or '')
+    if inv.get('customer_phone'):
+        customer_contact += (' · ' if customer_contact else '') + str(inv['customer_phone'])
+    parties = Table([[
+        [p('FROM', label_style), Spacer(1, 4), p('Fermi Platform', party_name),
+         Spacer(1, 4), p('tarif@fermi.io', party_sub)],
+        [p('BILL TO', label_style), Spacer(1, 4), p(inv['customer_name'], party_name),
+         Spacer(1, 4), p(customer_contact, party_sub)]
+    ]], colWidths=[width / 2, width / 2])
+    parties.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), paper),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 16),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+        ('TOPPADDING', (0, 0), (-1, -1), 16),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 16),
+    ]))
+    story.append(parties)
+    small_gap(22)
+
+    item_name_style = style('item-name', 9.5, navy)
+    cell_style = style('item-cell', 9.5, navy)
+    right_cell = style('item-right', 9.5, navy, False, TA_RIGHT)
+    center_cell = style('item-center', 9.5, navy, False, TA_CENTER)
+    head_style = style('item-head', 8, colors.white, True)
+    head_center = style('item-head-center', 8, colors.white, True, TA_CENTER)
+    head_right = style('item-head-right', 8, colors.white, True, TA_RIGHT)
+    data = [[p('#', head_style), p('PRODUCT / DESCRIPTION', head_style),
+             p('QTY', head_center), p('UNIT PRICE', head_right), p('TOTAL', head_right)]]
+    for index, item in enumerate(items, 1):
+        data.append([
+            p(index, cell_style), p(item['product_name'], item_name_style),
+            p(item['quantity'], center_cell),
+            p('BDT ' + money(item['unit_price']), right_cell),
+            p('BDT ' + money(item['total']), right_cell),
+        ])
+    table = Table(data, colWidths=[width * .07, width * .39, width * .10, width * .22, width * .22], repeatRows=1, hAlign='LEFT')
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), navy),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, 0), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('TOPPADDING', (0, 1), (-1, -1), 11),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 11),
+        ('LINEBELOW', (0, 1), (-1, -1), .4, border),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    story.append(table)
+    small_gap(17)
+
+    total_label = style('total-label', 10, muted)
+    total_number = style('total-number', 10, navy, False, TA_RIGHT)
+    grand_label = style('grand-label', 11, navy, True)
+    grand_number = style('grand-number', 11, navy, True, TA_RIGHT)
+    totals = Table([
+        [p('Subtotal', total_label), p('BDT ' + money(inv['subtotal']), total_number)],
+        [p('Tax (5%)', total_label), p('BDT ' + money(inv['tax']), total_number)],
+        [p('Total (BDT)', grand_label), p('BDT ' + money(inv['total']), grand_number)],
+    ], colWidths=[width * .70, width * .30])
+    totals.setStyle(TableStyle([
+        ('BACKGROUND', (0, 2), (-1, 2), sky),
+        ('LINEBELOW', (0, 0), (-1, 1), .5, border),
+        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    story.append(totals)
     if inv.get('notes'):
-        story.append(Spacer(1,0.2*inch)); story.append(Paragraph(f"Notes: {inv['notes']}",vs))
-    story.append(Spacer(1,0.3*inch)); story.append(Paragraph("Thank you for your business. — Fermi Platform",ss))
-    doc.build(story); buffer.seek(0)
-    return send_file(buffer, as_attachment=True, download_name=f"{inv['invoice_number']}.pdf", mimetype='application/pdf')
+        small_gap(20)
+        notes = Table([[[p('NOTES:', label_style), Spacer(1, 4),
+                         p(inv['notes'], style('notes-text', 10, navy))]]], colWidths=[width])
+        notes.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), paper),
+            ('LEFTPADDING', (0, 0), (-1, -1), 12),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+            ('TOPPADDING', (0, 0), (-1, -1), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+        ]))
+        story.append(notes)
+    small_gap(28)
+    story.append(HRFlowable(width='100%', thickness=.6, color=border))
+    small_gap(14)
+    story.append(p('Thank you for your business! — Fermi Platform, Dhaka, Bangladesh',
+                   style('footer', 9, muted, False, TA_CENTER)))
+    doc.build(story)
+    buffer.seek(0)
+    return send_file(buffer, as_attachment=True,
+                     download_name=f"{inv['invoice_number']}.pdf",
+                     mimetype='application/pdf')
 
 @app.route('/chatbot')
 @login_required
