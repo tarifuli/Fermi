@@ -12,7 +12,7 @@ import io
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 
-DATABASE = 'fermi.db'
+DATABASE = os.environ.get('DATABASE_PATH', 'fermi.db')
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', 'YOUR_API_KEY_HERE')
 
 @app.context_processor
@@ -91,7 +91,7 @@ def init_db():
                 db.execute(f'ALTER TABLE {table} ADD COLUMN business_id INTEGER REFERENCES businesses(id)')
             db.execute(f'CREATE INDEX IF NOT EXISTS idx_{table}_business ON {table}(business_id)')
         count = db.execute('SELECT COUNT(*) FROM products').fetchone()[0]
-        if count == 0:
+        if count == 0 and os.environ.get('FERMI_SEED_DEMO', '').lower() == 'true':
             db.executemany('INSERT INTO products (name, sku, category, price, stock) VALUES (?,?,?,?,?)', [
                 ('Premium Leather Bag',  'PLB-001', 'Bags',        2500, 45),
                 ('Classic Wallet',       'CW-002',  'Accessories', 850,  120),
@@ -139,13 +139,10 @@ init_db()
 
 # ── HELPERS ──────────────────────────────────────────────────────────────────
 def next_invoice_number(business_id=None):
-    with get_db() as db:
-        last = db.execute("SELECT invoice_number FROM invoices WHERE business_id=? ORDER BY id DESC LIMIT 1", (business_id,)).fetchone()
-        if last:
-            try: num = int(last['invoice_number'].split('-')[1]) + 1
-            except: num = 1001
-        else: num = 1001
-        return f"FRM-{num}"
+    # Globally unique across businesses, including pre-existing FRM-1001 records.
+    # Do not trust a client-supplied invoice number.
+    return f"FRM-{business_id}-{secrets.token_hex(6).upper()}"
+
 
 def get_sales_data(days=30, business_id=None):
     with get_db() as db:
