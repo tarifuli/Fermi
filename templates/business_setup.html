@@ -1,14 +1,100 @@
 {% extends "base.html" %}
+{% block title %}Create your workspace — Fermi{% endblock %}
+{% block topbar_title %}Business setup{% endblock %}
+{% block extra_styles %}
+<style>
+.setup-shell{max-width:1040px;margin:18px auto 60px}
+.setup-kicker{color:var(--teal);font-weight:700;font-size:12px;letter-spacing:1.7px;text-transform:uppercase}
+.setup-heading{font-family:'Playfair Display',serif;font-size:36px;color:var(--navy);margin:10px 0}
+.setup-subtitle{color:var(--muted);line-height:1.65;max-width:650px}
+.setup-layout{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,0.9fr);gap:24px;margin-top:28px}
+.setup-panel,.setup-preview{background:#fff;border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);padding:32px}
+.setup-step{display:inline-flex;align-items:center;gap:8px;color:var(--teal);font-weight:700;font-size:12px;margin-bottom:18px}
+.setup-dot{display:grid;place-items:center;background:var(--mint);border-radius:50%;height:26px;width:26px}
+.setup-panel h2{font-size:24px;color:var(--navy);margin-bottom:10px}
+.setup-help{color:var(--muted);font-size:14px;line-height:1.65;margin-bottom:28px}
+.setup-field-label{font-size:13px;font-weight:700;display:block;margin-bottom:10px;color:var(--navy)}
+.setup-input{width:100%;padding:16px 18px;font:inherit;font-size:16px;border:1.5px solid var(--border);border-radius:10px;outline:none;transition:box-shadow .15s,border-color .15s}
+.setup-input:focus{border-color:var(--blue);box-shadow:0 0 0 4px rgba(46,109,164,.12)}
+.setup-counter{display:flex;justify-content:space-between;gap:8px;color:var(--muted);font-size:12px;margin-top:10px}
+.setup-validation{color:var(--red);font-size:13px;margin-top:8px;min-height:18px}
+.setup-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:28px}
+.setup-submit{padding:13px 20px;font-size:14px;min-height:46px}
+.setup-submit:disabled{opacity:.45;cursor:not-allowed}
+.setup-preview{background:linear-gradient(155deg,#173655,#22577a);color:#fff;align-self:start;position:sticky;top:88px;border-color:transparent}
+.setup-preview-label{font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:#c7dbe9;font-weight:700}
+.setup-monogram{display:grid;place-items:center;width:62px;height:62px;background:rgba(255,255,255,.17);border:1px solid rgba(255,255,255,.3);border-radius:16px;font-family:'Playfair Display',serif;font-size:32px;margin:28px 0 16px}
+.setup-preview-name{font-size:25px;font-weight:700;overflow-wrap:anywhere}
+.setup-preview-caption{color:#c7dbe9;font-size:13px;margin-top:6px}
+.setup-preview-line{height:1px;background:rgba(255,255,255,.2);margin:28px 0}
+.setup-preview-benefit{display:flex;gap:10px;align-items:flex-start;margin:14px 0;font-size:13px;color:#e3edf5}
+.setup-check{color:#9fe1cb;font-weight:800}
+.setup-note{font-size:12px;color:#c7dbe9;line-height:1.65;margin-top:22px}
+@media(max-width:760px){.setup-layout{grid-template-columns:1fr}.setup-preview{position:static}.setup-panel,.setup-preview{padding:24px}.setup-heading{font-size:29px}}
+</style>
+{% endblock %}
 {% block content %}
-<section style="max-width:580px;margin:3rem auto;padding:2rem">
-<h1>Set up your business</h1>
-<p>You can explore Fermi first. Add your business when you are ready.</p>
-{% if error %}<p role="alert">{{ error }}</p>{% endif %}
-<form method="post">
-<label for="business_name">Business name</label>
-<input id="business_name" name="business_name" maxlength="120" required autocomplete="organization" style="display:block;width:100%;padding:12px;margin:12px 0">
-<button type="submit">Create business profile</button>
-</form>
-<p><a href="{{ url_for('dashboard') }}">Explore dashboard instead</a></p>
-</section>
+<div class="setup-shell">
+  <div class="setup-kicker">Welcome to your workspace</div>
+  <h1 class="setup-heading">Let's build your business home.</h1>
+  <p class="setup-subtitle">Set up a dedicated workspace to organize products, track invoices, and understand how your business is doing. It only takes a moment.</p>
+  <div class="setup-layout">
+    <section class="setup-panel" aria-labelledby="setup-title">
+      <div class="setup-step"><span class="setup-dot">1</span> YOUR BUSINESS</div>
+      <h2 id="setup-title">What should we call your business?</h2>
+      <p class="setup-help">Use the name customers know you by. You can start with just a name and explore the rest of Fermi afterward.</p>
+      {% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
+      <form method="post" id="businessForm">
+        <label class="setup-field-label" for="business_name">Business name <span aria-hidden="true">*</span></label>
+        <input class="setup-input" id="business_name" name="business_name" type="text" maxlength="120" minlength="1" required autocomplete="organization" placeholder="e.g. Green Leaf Traders" value="{{ request.form.get('business_name', '') }}" aria-describedby="businessHint businessValidation">
+        <div class="setup-counter"><span id="businessHint">This will appear on your workspace.</span><span id="nameCount">0 / 120</span></div>
+        <div id="businessValidation" class="setup-validation" role="status" aria-live="polite"></div>
+        <div class="setup-actions">
+          <button class="btn btn-primary setup-submit" id="createButton" type="submit" disabled>Create my workspace →</button>
+          <a href="{{ url_for('dashboard') }}" class="btn btn-ghost">Explore first</a>
+        </div>
+      </form>
+    </section>
+    <aside class="setup-preview" aria-label="Live business workspace preview">
+      <div class="setup-preview-label">Live preview · Your workspace</div>
+      <div class="setup-monogram" id="businessMonogram">F</div>
+      <div class="setup-preview-name" id="businessPreviewName">Your business</div>
+      <div class="setup-preview-caption">Fermi Business Workspace · BDT</div>
+      <div class="setup-preview-line"></div>
+      <div class="setup-preview-label">What you'll unlock</div>
+      <div class="setup-preview-benefit"><span class="setup-check">✓</span><span>Organized products and inventory</span></div>
+      <div class="setup-preview-benefit"><span class="setup-check">✓</span><span>Invoices and purchase records</span></div>
+      <div class="setup-preview-benefit"><span class="setup-check">✓</span><span>Business insights in one place</span></div>
+      <p class="setup-note">Preview only. Your workspace is created when you select “Create my workspace.”</p>
+    </aside>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const input = document.getElementById('business_name');
+  const name = document.getElementById('businessPreviewName');
+  const monogram = document.getElementById('businessMonogram');
+  const count = document.getElementById('nameCount');
+  const validation = document.getElementById('businessValidation');
+  const submit = document.getElementById('createButton');
+  const form = document.getElementById('businessForm');
+  function update() {
+    const value = input.value.trim();
+    count.textContent = input.value.length + ' / 120';
+    name.textContent = value || 'Your business';
+    monogram.textContent = value ? Array.from(value)[0].toUpperCase() : 'F';
+    validation.textContent = input.value && !value ? 'Please enter a business name, not just spaces.' : '';
+    submit.disabled = !value || value.length > 120;
+  }
+  input.addEventListener('input', update);
+  form.addEventListener('submit', e => {
+    if (!input.value.trim()) { e.preventDefault(); update(); input.focus(); return; }
+    submit.disabled = true;
+    submit.textContent = 'Creating workspace…';
+  });
+  update();
+})();
+</script>
 {% endblock %}
