@@ -359,8 +359,11 @@ def adjust_product_stock(pid):
         return error
     data = request.get_json(silent=True) or {}
     try:
-        delta = int(data.get('delta'))
-        if isinstance(data.get('delta'), bool) or abs(delta) > 100000 or delta == 0:
+        raw_delta = data.get('delta')
+        if isinstance(raw_delta, bool) or not isinstance(raw_delta, (int, str)) or not str(raw_delta).lstrip('-').isdigit():
+            raise ValueError()
+        delta = int(raw_delta)
+        if abs(delta) > 100000 or delta == 0:
             raise ValueError()
     except (ValueError, TypeError):
         return jsonify({'success': False, 'error': 'Enter a non-zero whole-number adjustment.'}), 400
