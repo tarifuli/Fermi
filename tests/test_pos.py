@@ -76,6 +76,21 @@ class POSTests(unittest.TestCase):
         self.assertTrue(pdf.data.startswith(b'%PDF'))
         self.assertGreater(len(pdf.data), 1800)
 
+    def test_stock_adjustment_and_nonnegative_guard(self):
+        from app import get_db
+        success = self.client.post('/products/adjust/{}'.format(self.product_id), json={'delta': 5})
+        self.assertEqual(success.status_code, 200)
+        self.assertEqual(success.json['stock'], 8)
+        rejected = self.client.post('/products/adjust/{}'.format(self.product_id), json={'delta': -9})
+        self.assertEqual(rejected.status_code, 400)
+        with get_db() as db:
+            self.assertEqual(db.execute('SELECT stock FROM products WHERE id=?', (self.product_id,)).fetchone()[0], 8)
+
+    def test_stock_adjustment_rejects_invalid_input(self):
+        for delta in [0, 1.5, True, 'abc', 100001]:
+            response = self.client.post('/products/adjust/{}'.format(self.product_id), json={'delta': delta})
+            self.assertEqual(response.status_code, 400, str(delta))
+
     def test_pos_requires_login(self):
         with self.client.session_transaction() as sess:
             sess.clear()
