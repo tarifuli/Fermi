@@ -367,6 +367,58 @@ def api_products():
         prods = db.execute('SELECT * FROM products WHERE business_id=? ORDER BY name', (current_business_id(),)).fetchall()
     return jsonify([dict(p) for p in prods])
 
+# Customer directory is derived from existing invoices, requiring no schema change.
+# Every query is scoped to the signed-in user's business.
+@app.route('/customers')
+@login_required
+def customers():
+    business_id = current_business_id()
+    if business_id is None:
+        return redirect(url_for('business_setup'))
+    with get_db() as db:
+        rows = db.execute('''
+            SELECT LOWER(TRIM(customer_name)) AS customer_key,
+                   MIN(customer_name) AS customer_name,
+                   COUNT(*) AS invoice_count,
+                   COALESCE(SUM(CASE WHEN status = 'paid' THEN total ELSE 0 END), 0) AS paid_total,
+                   MAX(created_at) AS last_invoice
+            FROM invoices
+            WHERE business_id=? AND TRIM(customer_name) != ''
+            GROUP BY LOWER(TRIM(customer_name))
+            ORDER BY MAX(created_at) DESC
+        ''', (business_id,)).fetchall()
+    return render_template('customers.html', customers=[dict(row) for row in rows])
+
+
+@app.route('/customers/history')
+@login_required
+def customer_history():
+    business_id = current_business_id()
+    if business_id is None:
+        return redirect(url_for('business_setup'))
+    customer_key = request.args.get('name', '').strip().lower()
+    if not customer_key or len(customer_key) > 200:
+        return redirect(url_for('customers'))
+    with get_db() as db:
+        rows = db.execute('''
+            SELECT id, invoice_number, customer_name, customer_email,
+                   customer_phone, created_at, total, status
+            FROM invoices
+            WHERE business_id=? AND LOWER(TRIM(customer_name))=?
+            ORDER BY created_at DESC, id DESC
+        ''', (business_id, customer_key)).fetchall()
+    if not rows:
+        return redirect(url_for('customers'))
+    invoices_for_customer = [dict(row) for row in rows]
+    paid_total = sum((row['total'] for row in invoices_for_customer if row['status'] == 'paid'), 0)
+    return render_template('customer_history.html',
+                           customer_name=invoices_for_customer[0]['customer_name'],
+                           customer_email=next((row['customer_email'] for row in invoices_for_customer if row['customer_email']), ''),
+                           customer_phone=next((row['customer_phone'] for row in invoices_for_customer if row['customer_phone']), ''),
+                           paid_total=paid_total,
+                           invoices=invoices_for_customer)
+
+
 @app.route('/invoices')
 @login_required
 def invoices():
