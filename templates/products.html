@@ -11,12 +11,12 @@
   </button>
 </div>
 
-<div id="alert-box"></div>
+<div id="alert-box"></div><div class="stats-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:18px"><div class="stat-card"><div class="stat-label">Products</div><div class="stat-value">{{ products|length }}</div></div><div class="stat-card"><div class="stat-label">Low stock (1–19)</div><div class="stat-value">{{ products|selectattr('stock','gt',0)|selectattr('stock','lt',20)|list|length }}</div></div><div class="stat-card"><div class="stat-label">Out of stock</div><div class="stat-value">{{ products|selectattr('stock','equalto',0)|list|length }}</div></div></div>
 
 <div class="card">
   <div class="card-header">
     <span class="card-title">All Products ({{ products|length }})</span>
-    <input class="form-control" style="width:220px;" placeholder="🔍 Search products..." oninput="filterTable(this.value)">
+    <select class="form-control" id="stockFilter" style="width:155px" onchange="filterTable()" aria-label="Stock filter"><option value="all">All stock</option><option value="low">Low stock</option><option value="out">Out of stock</option><option value="ok">In stock</option></select><input class="form-control" style="width:220px;" placeholder="🔍 Search products..." id="inventorySearch" oninput="filterTable()">
   </div>
   <div class="table-wrap">
     <table id="productsTable">
@@ -33,16 +33,16 @@
       </thead>
       <tbody>
         {% for p in products %}
-        <tr data-search="{{ p.name|lower }} {{ p.sku|lower }} {{ p.category|lower }}">
+        <tr data-search="{{ (p.name ~ ' ' ~ p.sku ~ ' ' ~ (p.category or ''))|lower|e }}" data-stock="{{ p.stock }}">
           <td style="font-weight:500;">{{ p.name }}</td>
           <td style="font-family:monospace;font-size:12px;color:var(--muted);">{{ p.sku }}</td>
           <td>{{ p.category or '—' }}</td>
           <td style="font-weight:600;">৳{{ "{:,.2f}".format(p.price) }}</td>
           <td style="font-weight:600;color:{% if p.stock < 20 %}var(--red){% elif p.stock < 50 %}var(--amber){% else %}var(--teal){% endif %};">{{ p.stock }}</td>
-          <td><span class="badge {% if p.stock < 20 %}badge-low{% else %}badge-ok{% endif %}">{% if p.stock < 20 %}Low Stock{% else %}In Stock{% endif %}</span></td>
+          <td><span class="badge {% if p.stock < 20 %}badge-low{% else %}badge-ok{% endif %}">{% if p.stock == 0 %}Out of Stock{% elif p.stock < 20 %}Low Stock{% else %}In Stock{% endif %}</span></td>
           <td>
             <button class="btn btn-ghost btn-sm" onclick='openEdit({{ p | tojson }})'>Edit</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteProduct({{ p.id }}, this)">Delete</button>
+            <button class="btn btn-ghost btn-sm" onclick='openAdjustment({{ p.id }}, {{ p.name|tojson }}, {{ p.stock }})'>Adjust stock</button><button class="btn btn-danger btn-sm" onclick="deleteProduct({{ p.id }}, this)">Delete</button>
           </td>
         </tr>
         {% else %}
@@ -53,7 +53,7 @@
   </div>
 </div>
 
-<!-- Add Modal -->
+<div class="modal-overlay" id="adjustModal"><div class="modal"><div class="modal-header"><span class="modal-title">Adjust stock</span><button class="modal-close" onclick="closeModal('adjustModal')">×</button></div><p id="adjustProductLabel" style="margin-bottom:12px"></p><input type="hidden" id="adjustProductId"><label class="form-label" for="adjustDelta">Stock change (+ to restock, − to reduce)</label><input id="adjustDelta" class="form-control" type="number" step="1" min="-100000" max="100000"><p style="font-size:12px;color:var(--muted);margin:12px 0">Cannot reduce stock below zero.</p><button id="adjustSubmit" class="btn btn-primary" onclick="saveAdjustment()">Apply adjustment</button></div></div><!-- Add Modal -->
 <div class="modal-overlay" id="addModal">
   <div class="modal">
     <div class="modal-header">
@@ -142,12 +142,33 @@ function showAlert(msg, type='success') {
   setTimeout(() => b.innerHTML = '', 3000);
 }
 
-function filterTable(q) {
-  document.querySelectorAll('#productsTable tbody tr').forEach(row => {
-    row.style.display = row.dataset.search?.includes(q.toLowerCase()) ? '' : 'none';
-  });
+function filterTable() {
+ const q=document.getElementById('inventorySearch').value.toLowerCase();
+ const f=document.getElementById('stockFilter').value;
+ document.querySelectorAll('#productsTable tbody tr[data-stock]').forEach(row=>{
+  const n=Number(row.dataset.stock);
+  row.hidden=!(row.dataset.search.includes(q)&&(f==='all'||(f==='low'&&n>0&&n<20)||(f==='out'&&n===0)||(f==='ok'&&n>=20)));
+ });
 }
-
+function openAdjustment(id,name,stock){
+ document.getElementById('adjustProductId').value=id;
+ document.getElementById('adjustProductLabel').textContent=name+' · Current stock: '+stock;
+ document.getElementById('adjustDelta').value='';
+ openModal('adjustModal');
+}
+async function saveAdjustment(){
+ const id=document.getElementById('adjustProductId').value;
+ const value=document.getElementById('adjustDelta').value;
+ const delta=Number(value);
+ if(!value||!Number.isInteger(delta)||delta===0||Math.abs(delta)>100000){showAlert('Enter a non-zero whole-number adjustment.','error');return}
+ const btn=document.getElementById('adjustSubmit');btn.disabled=true;
+ try{
+  const response=await fetch('/products/adjust/'+id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({delta})});
+  const result=await response.json();
+  if(!response.ok||!result.success)throw Error(result.error||'Stock update failed');
+  location.reload();
+ }catch(error){showAlert(error.message,'error');btn.disabled=false}
+}
 async function addProduct() {
   const data = {
     name: document.getElementById('add-name').value,
