@@ -1,9 +1,130 @@
 {% extends "base.html" %}
+{% block title %}{{ business.name }} · Workspace — Fermi{% endblock %}
+{% block topbar_title %}Your business workspace{% endblock %}
+{% block extra_styles %}
+<style>
+.ws-wrap{max-width:1100px;margin:0 auto 60px}
+.ws-hero{background:linear-gradient(125deg,#173856,#27698c);border-radius:20px;padding:36px 40px;color:white;display:flex;align-items:center;justify-content:space-between;gap:20px}
+.ws-eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:1.5px;color:#bce5dd;font-weight:700}
+.ws-hero h1{font-family:'Playfair Display',serif;font-size:35px;margin:12px 0;overflow-wrap:anywhere}
+.ws-hero p{color:#e1ebf3;line-height:1.6;max-width:620px}
+.ws-hero-icon{height:84px;width:84px;border-radius:22px;background:rgba(255,255,255,.15);display:grid;place-items:center;font-size:40px;flex-shrink:0}
+.ws-banner{background:var(--mint);border:1px solid #9fe1cb;color:var(--teal);padding:14px 18px;border-radius:12px;margin:20px 0;display:flex;gap:12px;align-items:center;font-weight:600}
+.ws-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(270px,1fr);gap:22px;margin-top:24px}
+.ws-panel{background:#fff;border:1px solid var(--border);border-radius:16px;padding:26px;box-shadow:var(--shadow)}
+.ws-panel h2{font-size:20px;color:var(--navy);margin-bottom:8px}
+.ws-muted{font-size:13px;color:var(--muted);line-height:1.6}
+.ws-progress-track{height:9px;border-radius:20px;background:#e8eef3;margin:17px 0 8px;overflow:hidden}
+.ws-progress-fill{height:100%;width:0;background:var(--teal);transition:width .25s;border-radius:20px}
+.ws-step{display:flex;align-items:flex-start;gap:12px;padding:16px 0;border-bottom:1px solid var(--border)}
+.ws-step:last-child{border:0}
+.ws-step input{width:19px;height:19px;accent-color:var(--teal);margin-top:2px;cursor:pointer;flex-shrink:0}
+.ws-step strong{display:block;font-size:14px;color:var(--navy);margin-bottom:5px}
+.ws-step p{font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:8px}
+.ws-step a{color:var(--blue);font-size:13px;font-weight:700;text-decoration:none}
+.ws-step a:hover{text-decoration:underline}
+.ws-actions{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px}
+.ws-action{display:block;text-decoration:none;border:1px solid var(--border);border-radius:12px;padding:18px;background:#fff;transition:transform .15s,border-color .15s,box-shadow .15s}
+.ws-action:hover{transform:translateY(-2px);border-color:var(--blue);box-shadow:var(--shadow)}
+.ws-action span{display:block;font-size:24px;margin-bottom:9px}
+.ws-action strong{display:block;color:var(--navy);font-size:14px}
+.ws-action small{display:block;color:var(--muted);font-size:12px;margin-top:6px;line-height:1.5}
+.ws-tour-buttons{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}
+.ws-tour-button{border:1px solid var(--border);background:#fff;border-radius:20px;padding:8px 13px;font:inherit;font-size:12px;cursor:pointer}
+.ws-tour-button[aria-selected="true"]{background:var(--navy);border-color:var(--navy);color:white}
+.ws-tour-content{background:var(--bg);border-radius:12px;padding:20px;min-height:160px}
+.ws-tour-content h3{font-size:17px;color:var(--navy);margin-bottom:8px}
+.ws-tour-content p{font-size:13px;color:var(--muted);line-height:1.7}
+.ws-tour-content a{display:inline-block;margin-top:15px;color:var(--blue);font-size:13px;font-weight:700}
+.ws-notice{font-size:12px;color:var(--muted);line-height:1.6;margin-top:18px}
+@media(max-width:850px){.ws-grid{grid-template-columns:1fr}.ws-hero{padding:26px}.ws-hero h1{font-size:28px}.ws-hero-icon{display:none}}
+@media(max-width:520px){.ws-actions{grid-template-columns:1fr}.ws-panel{padding:20px}}
+</style>
+{% endblock %}
 {% block content %}
-<section style="max-width:680px;margin:3rem auto;padding:2rem">
-<h1>{{ business.name }}</h1>
-<p>Your business profile has been created.</p>
-<p>Inventory, invoices and analytics are not yet linked to this business. Do not enter private business data until isolation is complete.</p>
-<p><a href="{{ url_for('dashboard') }}">Back to dashboard</a></p>
-</section>
+<div class="ws-wrap">
+  <header class="ws-hero">
+    <div>
+      <div class="ws-eyebrow">✓ Business workspace ready</div>
+      <h1>Welcome to {{ business.name }}!</h1>
+      <p>Your business has its own Fermi workspace. Here's a guided starting point for organizing inventory, making invoices and tracking your progress.</p>
+    </div>
+    <div class="ws-hero-icon" aria-hidden="true">🏪</div>
+  </header>
+  <div class="ws-banner" role="status"><span aria-hidden="true">✓</span><span>Your business profile was created successfully. You're ready to explore.</span></div>
+  <div class="ws-grid">
+    <div>
+      <section class="ws-panel" aria-labelledby="checklistTitle">
+        <h2 id="checklistTitle">Your getting-started checklist</h2>
+        <p class="ws-muted">Mark off each step as you explore. Your progress here is a browser-only guide; checking a box doesn't change your business data.</p>
+        <div class="ws-progress-track" role="progressbar" aria-label="Onboarding checklist progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="wsProgressTrack"><div class="ws-progress-fill" id="wsProgressFill"></div></div>
+        <p class="ws-muted" id="wsProgressText" aria-live="polite">0 of 3 steps completed</p>
+        <div class="ws-step"><input type="checkbox" class="ws-check" id="wsStep1"><div><label for="wsStep1"><strong>Explore your dashboard</strong></label><p>See an overview of your business activity and important metrics.</p><a href="{{ url_for('dashboard') }}">Open dashboard →</a></div></div>
+        <div class="ws-step"><input type="checkbox" class="ws-check" id="wsStep2"><div><label for="wsStep2"><strong>Add your first product</strong></label><p>Set up an item with its price and available stock.</p><a href="{{ url_for('products') }}">Manage inventory →</a></div></div>
+        <div class="ws-step"><input type="checkbox" class="ws-check" id="wsStep3"><div><label for="wsStep3"><strong>Make a test invoice</strong></label><p>Choose a product, enter a customer and preview the invoice PDF.</p><a href="{{ url_for('new_invoice') }}">Create an invoice →</a></div></div>
+      </section>
+      <section class="ws-panel" style="margin-top:22px" aria-labelledby="quickTitle">
+        <h2 id="quickTitle">Jump into your workspace</h2>
+        <p class="ws-muted">Choose where you want to begin.</p>
+        <div class="ws-actions">
+          <a class="ws-action" href="{{ url_for('dashboard') }}"><span aria-hidden="true">📊</span><strong>Dashboard</strong><small>Business overview and insights</small></a>
+          <a class="ws-action" href="{{ url_for('products') }}"><span aria-hidden="true">📦</span><strong>Inventory</strong><small>Products, prices and stock</small></a>
+          <a class="ws-action" href="{{ url_for('new_invoice') }}"><span aria-hidden="true">🧾</span><strong>New invoice</strong><small>Create a customer invoice</small></a>
+          <a class="ws-action" href="{{ url_for('invoices') }}"><span aria-hidden="true">📁</span><strong>Invoice history</strong><small>View and download saved invoices</small></a>
+        </div>
+      </section>
+    </div>
+    <aside>
+      <section class="ws-panel" aria-labelledby="tourTitle">
+        <h2 id="tourTitle">Take a quick tour</h2>
+        <p class="ws-muted">Select a section to learn what it does.</p>
+        <div class="ws-tour-buttons" role="tablist" aria-label="Workspace sections">
+          <button class="ws-tour-button" type="button" role="tab" aria-selected="true" id="tourTab0" aria-controls="tourPanel">Dashboard</button>
+          <button class="ws-tour-button" type="button" role="tab" aria-selected="false" id="tourTab1" aria-controls="tourPanel">Inventory</button>
+          <button class="ws-tour-button" type="button" role="tab" aria-selected="false" id="tourTab2" aria-controls="tourPanel">Invoices</button>
+        </div>
+        <div class="ws-tour-content" id="tourPanel" role="tabpanel" aria-labelledby="tourTab0" aria-live="polite">
+          <h3 id="tourHeading">Your business at a glance</h3>
+          <p id="tourDescription">Your dashboard summarizes sales and stock activity so you can see how your business is doing.</p>
+          <a id="tourLink" href="{{ url_for('dashboard') }}">Explore dashboard →</a>
+        </div>
+      </section>
+      <p class="ws-notice">This is the Fermi development preview. Use sample business data while features are being tested. Checklist selections are stored only in this browser.</p>
+    </aside>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const tabs = Array.from(document.querySelectorAll('.ws-tour-button'));
+  const tours = [
+    {title:'Your business at a glance',description:'Your dashboard summarizes sales and stock activity so you can see how your business is doing.',label:'Explore dashboard →',href:{{ url_for('dashboard')|tojson }}},
+    {title:'Keep your products organized',description:'Add items, set prices and manage quantities. Product stock is updated when invoices are created.',label:'Open inventory →',href:{{ url_for('products')|tojson }}},
+    {title:'Create and revisit invoices',description:'Build invoices from products, view previous transactions and download invoice PDFs.',label:'Open invoices →',href:{{ url_for('invoices')|tojson }}}
+  ];
+  function select(index) {
+    const tour = tours[index];
+    tabs.forEach((tab,i) => {tab.setAttribute('aria-selected',String(i===index));tab.tabIndex=i===index?0:-1;});
+    document.getElementById('tourPanel').setAttribute('aria-labelledby','tourTab'+index);
+    document.getElementById('tourHeading').textContent=tour.title;
+    document.getElementById('tourDescription').textContent=tour.description;
+    const link=document.getElementById('tourLink');link.textContent=tour.label;link.href=tour.href;
+  }
+  tabs.forEach((tab,i) => {tab.addEventListener('click',()=>select(i));tab.addEventListener('keydown',e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();const next=(i+(e.key==='ArrowRight'?1:tabs.length-1))%tabs.length;select(next);tabs[next].focus();}});});
+  const checks=Array.from(document.querySelectorAll('.ws-check'));
+  const storageKey='fermi-onboarding-{{ business.id }}';
+  try {const stored=JSON.parse(sessionStorage.getItem(storageKey)||'[]');checks.forEach((check,i)=>check.checked=stored.includes(i));} catch (_) {}
+  function update(){
+    const selected=checks.flatMap((check,i)=>check.checked?[i]:[]);
+    const pct=Math.round(selected.length/checks.length*100);
+    document.getElementById('wsProgressFill').style.width=pct+'%';
+    document.getElementById('wsProgressTrack').setAttribute('aria-valuenow',String(pct));
+    document.getElementById('wsProgressText').textContent=selected.length+' of '+checks.length+' steps completed';
+    try {sessionStorage.setItem(storageKey,JSON.stringify(selected));} catch (_) {}
+  }
+  checks.forEach(check=>check.addEventListener('change',update));
+  update();
+})();
+</script>
 {% endblock %}
