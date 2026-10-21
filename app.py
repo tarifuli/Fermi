@@ -367,6 +367,56 @@ def api_products():
         prods = db.execute('SELECT * FROM products WHERE business_id=? ORDER BY name', (current_business_id(),)).fetchall()
     return jsonify([dict(p) for p in prods])
 
+# Expenses are business-scoped and tracked separately from invoice revenue.
+@app.route('/expenses')
+@login_required
+def expenses():
+    business_id = current_business_id()
+    if business_id is None:
+        return redirect(url_for('business_setup'))
+    with get_db() as db:
+        rows = db.execute('SELECT id, description, category, amount, expense_date, created_at FROM expenses WHERE business_id=? ORDER BY expense_date DESC, id DESC', (business_id,)).fetchall()
+        paid = db.execute("SELECT COALESCE(SUM(total),0) FROM invoices WHERE business_id=? AND status='paid'", (business_id,)).fetchone()[0]
+    from decimal import Decimal
+    expense_rows = [dict(row) for row in rows]
+    spent = sum((Decimal(str(row['amount'])) for row in expense_rows), Decimal('0'))
+    return render_template('expenses.html', expenses=expense_rows, total_expenses=spent, paid_revenue=paid, operating_balance=Decimal(str(paid))-spent)
+
+
+@app.route('/expenses/add', methods=['POST'])
+@login_required
+def add_expense():
+    business_id, error = require_business()
+    if error:
+        return error
+    from decimal import Decimal, InvalidOperation
+    description = request.form.get('description', '').strip()
+    category = request.form.get('category', '').strip()
+    expense_date = request.form.get('expense_date', '').strip()
+    try:
+        amount = Decimal(request.form.get('amount', ''))
+        valid_amount = amount.is_finite() and Decimal('0') < amount <= Decimal('999999999999.99') and amount.as_tuple().exponent >= -2
+        datetime.strptime(expense_date, '%Y-%m-%d')
+    except (InvalidOperation, ValueError, TypeError):
+        valid_amount = False
+    if not (1 <= len(description) <= 200) or category not in ('Rent', 'Utilities', 'Supplies', 'Salary', 'Transport', 'Marketing', 'Other') or not valid_amount:
+        return 'Invalid expense details. Please check description, category, amount and date.', 400
+    with get_db() as db:
+        db.execute('INSERT INTO expenses (business_id, description, category, amount, expense_date) VALUES (?,?,?,?,?)', (business_id, description, category, amount, expense_date))
+    return redirect(url_for('expenses'))
+
+
+@app.route('/expenses/delete/<int:expense_id>', methods=['POST'])
+@login_required
+def delete_expense(expense_id):
+    business_id, error = require_business()
+    if error:
+        return error
+    with get_db() as db:
+        db.execute('DELETE FROM expenses WHERE id=? AND business_id=?', (expense_id, business_id))
+    return redirect(url_for('expenses'))
+
+
 # Customer directory is derived from existing invoices, requiring no schema change.
 # Every query is scoped to the signed-in user's business.
 @app.route('/customers')
