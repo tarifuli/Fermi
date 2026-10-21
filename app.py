@@ -12,7 +12,7 @@ import io
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 
-DATABASE = 'fermi.db'
+DATABASE = os.environ.get('DATABASE_PATH', 'fermi.db')
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', 'YOUR_API_KEY_HERE')
 
 @app.context_processor
@@ -85,8 +85,13 @@ def init_db():
                 FOREIGN KEY (product_id) REFERENCES products(id)
             );
         ''')
+        for table in ('products', 'invoices'):
+            columns = {row['name'] for row in db.execute(f'PRAGMA table_info({table})')}
+            if 'business_id' not in columns:
+                db.execute(f'ALTER TABLE {table} ADD COLUMN business_id INTEGER REFERENCES businesses(id)')
+            db.execute(f'CREATE INDEX IF NOT EXISTS idx_{table}_business ON {table}(business_id)')
         count = db.execute('SELECT COUNT(*) FROM products').fetchone()[0]
-        if count == 0:
+        if count == 0 and os.environ.get('FERMI_SEED_DEMO', '').lower() == 'true':
             db.executemany('INSERT INTO products (name, sku, category, price, stock) VALUES (?,?,?,?,?)', [
                 ('Premium Leather Bag',  'PLB-001', 'Bags',        2500, 45),
                 ('Classic Wallet',       'CW-002',  'Accessories', 850,  120),
@@ -133,38 +138,35 @@ def init_db():
 init_db()
 
 # ── HELPERS ──────────────────────────────────────────────────────────────────
-def next_invoice_number():
-    with get_db() as db:
-        last = db.execute("SELECT invoice_number FROM invoices ORDER BY id DESC LIMIT 1").fetchone()
-        if last:
-            try: num = int(last['invoice_number'].split('-')[1]) + 1
-            except: num = 1001
-        else: num = 1001
-        return f"FRM-{num}"
+def next_invoice_number(business_id=None):
+    # Globally unique across businesses, including pre-existing FRM-1001 records.
+    # Do not trust a client-supplied invoice number.
+    return f"FRM-{business_id}-{secrets.token_hex(6).upper()}"
 
-def get_sales_data(days=30):
+
+def get_sales_data(days=30, business_id=None):
     with get_db() as db:
         since = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
         items = db.execute('''
             SELECT ii.product_name, SUM(ii.quantity) as qty, SUM(ii.total) as revenue
             FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id
-            WHERE DATE(i.created_at) >= ? AND i.status != 'cancelled'
+            WHERE DATE(i.created_at) >= ? AND i.status != 'cancelled' AND i.business_id=?
             GROUP BY ii.product_name ORDER BY qty DESC
-        ''', (since,)).fetchall()
+        ''', (since, business_id)).fetchall()
         return [dict(r) for r in items]
 
-def get_dashboard_stats():
+def get_dashboard_stats(business_id=None):
     with get_db() as db:
         month_start   = datetime.now().replace(day=1).strftime('%Y-%m-%d')
-        total_revenue = db.execute("SELECT COALESCE(SUM(total),0) FROM invoices WHERE status='paid'").fetchone()[0]
-        month_revenue = db.execute("SELECT COALESCE(SUM(total),0) FROM invoices WHERE status='paid' AND DATE(created_at)>=?", (month_start,)).fetchone()[0]
-        total_invoices= db.execute("SELECT COUNT(*) FROM invoices").fetchone()[0]
-        low_stock     = db.execute("SELECT COUNT(*) FROM products WHERE stock < 20").fetchone()[0]
-        total_products= db.execute("SELECT COUNT(*) FROM products").fetchone()[0]
+        total_revenue = db.execute("SELECT COALESCE(SUM(total),0) FROM invoices WHERE status='paid' AND business_id=?", (business_id,)).fetchone()[0]
+        month_revenue = db.execute("SELECT COALESCE(SUM(total),0) FROM invoices WHERE status='paid' AND DATE(created_at)>=? AND business_id=?", (month_start, business_id)).fetchone()[0]
+        total_invoices= db.execute("SELECT COUNT(*) FROM invoices WHERE business_id=?", (business_id,)).fetchone()[0]
+        low_stock     = db.execute("SELECT COUNT(*) FROM products WHERE stock < 20 AND business_id=?", (business_id,)).fetchone()[0]
+        total_products= db.execute("SELECT COUNT(*) FROM products WHERE business_id=?", (business_id,)).fetchone()[0]
         daily = []
         for i in range(6, -1, -1):
             d   = (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d')
-            rev = db.execute("SELECT COALESCE(SUM(total),0) FROM invoices WHERE DATE(created_at)=? AND status='paid'", (d,)).fetchone()[0]
+            rev = db.execute("SELECT COALESCE(SUM(total),0) FROM invoices WHERE DATE(created_at)=? AND status='paid' AND business_id=?", (d, business_id)).fetchone()[0]
             daily.append({'date': d, 'revenue': round(rev, 2)})
         return {'total_revenue': round(total_revenue,2), 'month_revenue': round(month_revenue,2),
                 'total_invoices': total_invoices, 'low_stock': low_stock,
@@ -272,28 +274,48 @@ def business_profile():
     return render_template('business_profile.html', business=dict(business))
 
 
+def current_business_id():
+    if 'user_id' not in session:
+        return None
+    with get_db() as db:
+        row = db.execute('SELECT business_id FROM business_memberships WHERE user_id=? ORDER BY business_id LIMIT 1', (session['user_id'],)).fetchone()
+    return row['business_id'] if row else None
+
+
+def require_business():
+    business_id = current_business_id()
+    if business_id is None:
+        return None, (jsonify({'success': False, 'error': 'Set up a business to use this feature.'}), 403)
+    return business_id, None
+
+
 # ── MAIN ROUTES (protected) ──────────────────────────────────────────────────
 @app.route('/')
 @login_required
 def dashboard():
-    return render_template('dashboard.html', stats=get_dashboard_stats(),
-                           sales_7=get_sales_data(7)[:5], sales_30=get_sales_data(30)[:5])
+    business_id = current_business_id()
+    return render_template('dashboard.html', stats=get_dashboard_stats(business_id),
+                           has_business=business_id is not None,
+                           sales_7=get_sales_data(7, business_id)[:5], sales_30=get_sales_data(30, business_id)[:5])
 
 @app.route('/products')
 @login_required
 def products():
     with get_db() as db:
-        prods = db.execute('SELECT * FROM products ORDER BY name').fetchall()
+        prods = db.execute('SELECT * FROM products WHERE business_id=? ORDER BY name', (current_business_id(),)).fetchall()
     return render_template('products.html', products=[dict(p) for p in prods])
 
 @app.route('/products/add', methods=['POST'])
 @login_required
 def add_product():
     d = request.json
+    business_id, error = require_business()
+    if error:
+        return error
     try:
         with get_db() as db:
-            db.execute('INSERT INTO products (name, sku, category, price, stock) VALUES (?,?,?,?,?)',
-                       (d['name'], d['sku'], d['category'], float(d['price']), int(d['stock'])))
+            db.execute('INSERT INTO products (name, sku, category, price, stock, business_id) VALUES (?,?,?,?,?,?)',
+                       (d['name'], d['sku'], d['category'], float(d['price']), int(d['stock']), business_id))
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
@@ -302,10 +324,13 @@ def add_product():
 @login_required
 def edit_product(pid):
     d = request.json
+    business_id, error = require_business()
+    if error:
+        return error
     try:
         with get_db() as db:
-            db.execute('UPDATE products SET name=?, sku=?, category=?, price=?, stock=? WHERE id=?',
-                       (d['name'], d['sku'], d['category'], float(d['price']), int(d['stock']), pid))
+            db.execute('UPDATE products SET name=?, sku=?, category=?, price=?, stock=? WHERE id=? AND business_id=?',
+                       (d['name'], d['sku'], d['category'], float(d['price']), int(d['stock']), pid, business_id))
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
@@ -313,58 +338,110 @@ def edit_product(pid):
 @app.route('/products/delete/<int:pid>', methods=['POST'])
 @login_required
 def delete_product(pid):
+    business_id, error = require_business()
+    if error:
+        return error
     with get_db() as db:
-        db.execute('DELETE FROM products WHERE id=?', (pid,))
-    return jsonify({'success': True})
+        result = db.execute('DELETE FROM products WHERE id=? AND business_id=?', (pid, business_id))
+    return jsonify({'success': result.rowcount == 1})
 
 @app.route('/api/products')
 @login_required
 def api_products():
     with get_db() as db:
-        prods = db.execute('SELECT * FROM products ORDER BY name').fetchall()
+        prods = db.execute('SELECT * FROM products WHERE business_id=? ORDER BY name', (current_business_id(),)).fetchall()
     return jsonify([dict(p) for p in prods])
 
 @app.route('/invoices')
 @login_required
 def invoices():
     with get_db() as db:
-        invs = db.execute('SELECT * FROM invoices ORDER BY created_at DESC').fetchall()
+        invs = db.execute('SELECT * FROM invoices WHERE business_id=? ORDER BY created_at DESC', (current_business_id(),)).fetchall()
     return render_template('invoices.html', invoices=[dict(i) for i in invs])
 
 @app.route('/invoices/new')
 @login_required
 def new_invoice():
     with get_db() as db:
-        prods = db.execute('SELECT * FROM products ORDER BY name').fetchall()
-    return render_template('new_invoice.html', invoice_number=next_invoice_number(), products=[dict(p) for p in prods])
+        prods = db.execute('SELECT * FROM products WHERE business_id=? ORDER BY name', (current_business_id(),)).fetchall()
+    return render_template('new_invoice.html', invoice_number=next_invoice_number(current_business_id()), products=[dict(p) for p in prods])
 
 @app.route('/invoices/create', methods=['POST'])
 @login_required
 def create_invoice():
-    d = request.json
+    d = request.get_json(silent=True) or {}
+    business_id, error = require_business()
+    if error:
+        return error
     try:
+        items = d.get('items')
+        if not isinstance(items, list) or not items or not isinstance(d.get('customer_name'), str) or not d['customer_name'].strip():
+            return jsonify({'success': False, 'error': 'Customer and items are required'}), 400
+        if any(not isinstance(it, dict) or type(it.get('quantity')) is not int or it['quantity'] <= 0
+               or (it.get('product_id') is not None and type(it['product_id']) is not int) for it in items):
+            return jsonify({'success': False, 'error': 'Invalid item or quantity'}), 400
+        from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
         with get_db() as db:
-            db.execute('INSERT INTO invoices (invoice_number, customer_name, customer_email, customer_phone, subtotal, tax, total, status, notes) VALUES (?,?,?,?,?,?,?,?,?)',
-                       (d['invoice_number'], d['customer_name'], d.get('customer_email',''),
-                        d.get('customer_phone',''), d['subtotal'], d['tax'], d['total'],
-                        d.get('status','paid'), d.get('notes','')))
+            line_items = []
+            subtotal = Decimal('0.00')
+            for item in items:
+                product_id = item.get('product_id')
+                if product_id is not None:
+                    product = db.execute('SELECT id, name, price, stock FROM products WHERE id=? AND business_id=?',
+                                         (product_id, business_id)).fetchone()
+                    if product is None or product['stock'] < item['quantity']:
+                        return jsonify({'success': False, 'error': 'Product unavailable or insufficient stock'}), 400
+                    name = product['name']
+                    price = Decimal(str(product['price']))
+                else:
+                    product = None
+                    name = item.get('product_name', '')
+                    if not isinstance(name, str) or not name.strip() or len(name.strip()) > 200:
+                        return jsonify({'success': False, 'error': 'Enter a custom item name (up to 200 characters)'}), 400
+                    name = name.strip()
+                    try:
+                        price = Decimal(str(item['unit_price']))
+                    except (InvalidOperation, KeyError, TypeError, ValueError):
+                        return jsonify({'success': False, 'error': 'Invalid custom item price'}), 400
+                    if price.as_tuple().exponent < -2:
+                        return jsonify({'success': False, 'error': 'Price may have at most two decimal places'}), 400
+                if not price.is_finite() or price <= 0 or price > Decimal('1000000000'):
+                    return jsonify({'success': False, 'error': 'Invalid item price'}), 400
+                line_total = (price * item['quantity']).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                subtotal += line_total
+                line_items.append((product_id, name, item['quantity'], price, line_total))
+            subtotal = subtotal.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            tax = (subtotal * Decimal('0.05')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            total = subtotal + tax
+            status = d.get('status', 'paid')
+            if status not in ('paid', 'pending'):
+                return jsonify({'success': False, 'error': 'Invalid invoice status'}), 400
+            invoice_number = next_invoice_number(business_id)
+            db.execute('INSERT INTO invoices (invoice_number, customer_name, customer_email, customer_phone, subtotal, tax, total, status, notes, business_id) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                       (invoice_number, d['customer_name'].strip(), d.get('customer_email',''),
+                        d.get('customer_phone',''), float(subtotal), float(tax), float(total),
+                        status, d.get('notes',''), business_id))
             inv_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
-            for item in d['items']:
+            for product_id, name, quantity, price, line_total in line_items:
+                if product_id is not None:
+                    updated = db.execute('UPDATE products SET stock=stock-? WHERE id=? AND business_id=? AND stock>=?',
+                                         (quantity, product_id, business_id, quantity))
+                    if updated.rowcount != 1:
+                        raise ValueError('Product unavailable or insufficient stock')
                 db.execute('INSERT INTO invoice_items (invoice_id, product_id, product_name, quantity, unit_price, total) VALUES (?,?,?,?,?,?)',
-                           (inv_id, item.get('product_id'), item['product_name'],
-                            item['quantity'], item['unit_price'], item['total']))
-                if item.get('product_id'):
-                    db.execute('UPDATE products SET stock = stock - ? WHERE id=?',
-                               (item['quantity'], item['product_id']))
+                           (inv_id, product_id, name, quantity, float(price), float(line_total)))
         return jsonify({'success': True, 'invoice_id': inv_id})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+    except (ValueError, TypeError, KeyError) as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception:
+        app.logger.exception('Invoice creation failed')
+        return jsonify({'success': False, 'error': 'Unable to create invoice'}), 500
 
 @app.route('/invoices/<int:inv_id>')
 @login_required
 def view_invoice(inv_id):
     with get_db() as db:
-        inv   = db.execute('SELECT * FROM invoices WHERE id=?', (inv_id,)).fetchone()
+        inv   = db.execute('SELECT * FROM invoices WHERE id=? AND business_id=?', (inv_id, current_business_id())).fetchone()
         items = db.execute('SELECT * FROM invoice_items WHERE invoice_id=?', (inv_id,)).fetchall()
     if not inv: return redirect(url_for('invoices'))
     return render_template('view_invoice.html', invoice=dict(inv), items=[dict(i) for i in items])
@@ -373,7 +450,10 @@ def view_invoice(inv_id):
 @login_required
 def download_pdf(inv_id):
     with get_db() as db:
-        inv   = dict(db.execute('SELECT * FROM invoices WHERE id=?', (inv_id,)).fetchone())
+        row = db.execute('SELECT * FROM invoices WHERE id=? AND business_id=?', (inv_id, current_business_id())).fetchone()
+        if row is None:
+            return 'Invoice not found', 404
+        inv = dict(row)
         items = [dict(i) for i in db.execute('SELECT * FROM invoice_items WHERE invoice_id=?', (inv_id,)).fetchall()]
     buffer = io.BytesIO()
     doc    = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
@@ -412,12 +492,15 @@ def chatbot():
 @login_required
 def api_chat():
     user_message = request.json.get('message', '')
-    stats    = get_dashboard_stats()
-    sales_7  = get_sales_data(7)
-    sales_30 = get_sales_data(30)
+    business_id, error = require_business()
+    if error:
+        return error
+    stats    = get_dashboard_stats(business_id)
+    sales_7  = get_sales_data(7, business_id)
+    sales_30 = get_sales_data(30, business_id)
     with get_db() as db:
-        all_products    = [dict(p) for p in db.execute('SELECT * FROM products ORDER BY stock ASC').fetchall()]
-        recent_invoices = [dict(i) for i in db.execute('SELECT * FROM invoices ORDER BY created_at DESC LIMIT 10').fetchall()]
+        all_products    = [dict(p) for p in db.execute('SELECT * FROM products WHERE business_id=? ORDER BY stock ASC', (business_id,)).fetchall()]
+        recent_invoices = [dict(i) for i in db.execute('SELECT * FROM invoices WHERE business_id=? ORDER BY created_at DESC LIMIT 10', (business_id,)).fetchall()]
     low_stock = [p for p in all_products if p['stock'] < 20]
     context = f"""You are Fermi AI, a business intelligence assistant for an SME in Bangladesh.
 You have access to REAL-TIME business data. Always answer based on this data.
