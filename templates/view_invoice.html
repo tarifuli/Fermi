@@ -43,7 +43,7 @@
     <div class="inv-meta">
       <h3>INVOICE</h3>
       <p style="font-weight:700;font-size:16px;color:var(--navy);">#{{ invoice.invoice_number }}</p>
-      <p>Date: {{ invoice.created_at[:10] }}</p>
+      <p>Date: {{ invoice.created_at|string|truncate(10, True, '') }}</p>
       <p style="margin-top:6px;"><span class="badge badge-{{ invoice.status }}">{{ invoice.status|capitalize }}</span></p>
     </div>
   </div>
