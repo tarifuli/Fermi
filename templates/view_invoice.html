@@ -20,6 +20,34 @@
   .inv-totals td { padding:5px 10px; font-size:13px; }
   .inv-totals .grand td { font-weight:700; font-size:15px; background:var(--sky); }
   .inv-footer { margin-top:28px; padding-top:16px; border-top:1px solid var(--border); text-align:center; font-size:12px; color:var(--muted); }
+
+  /* Print the *same* invoice DOM, not a separately recreated ReportLab invoice. */
+  @page { size: A4 portrait; margin: 12mm; }
+  @media print {
+    html, body { background:#fff !important; margin:0 !important; padding:0 !important; }
+    body * { visibility:hidden !important; }
+    .inv-paper, .inv-paper * { visibility:visible !important; }
+    .inv-paper {
+      position:absolute !important; top:0 !important; left:0 !important;
+      width:100% !important; max-width:none !important; box-sizing:border-box !important;
+      margin:0 !important; padding:24px !important; border:1px solid #dde3ea !important;
+      border-radius:8px !important; box-shadow:none !important;
+      background:#fff !important;
+      -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important;
+    }
+    .inv-paper *, .inv-paper *::before, .inv-paper *::after {
+      -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important;
+    }
+    .inv-header, .inv-parties, .inv-totals, .inv-footer { break-inside:avoid; page-break-inside:avoid; }
+    .inv-paper .table-wrap { overflow:visible !important; }
+    .inv-items { width:100% !important; }
+    .inv-items thead { display:table-header-group; }
+    .inv-items tr { break-inside:avoid; page-break-inside:avoid; }
+    .inv-items thead th { background:#1a3a5c !important; color:#fff !important; }
+    .inv-parties { background:#f4f6f9 !important; }
+    .inv-totals .grand td { background:#d6e8f7 !important; }
+    .inv-paper .badge { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -27,9 +55,9 @@
   <div class="page-title">Invoice Details</div>
   <div style="display:flex;gap:10px;">
     <a href="/invoices" class="btn btn-ghost">← Back</a>
-    <a href="/invoices/{{ invoice.id }}/pdf" class="btn btn-primary">
-      ⬇ Download PDF
-    </a>
+    <button type="button" id="saveInvoicePdf" class="btn btn-primary" onclick="window.print()">
+      ⬇ Save as PDF
+    </button>
   </div>
 </div>
 
