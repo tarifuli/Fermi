@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file, session
 import sqlite3, json, os, hashlib, secrets
+from db_backend import get_db as connect_database
 from datetime import datetime, timedelta
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -37,11 +38,12 @@ def login_required(f):
 
 # ── DATABASE ─────────────────────────────────────────────────────────────────
 def get_db():
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return connect_database()
 
 def init_db():
+    if os.environ.get('DATABASE_URL'):
+        # PostgreSQL schema is applied separately, not on request/import.
+        return
     with get_db() as db:
         db.executescript('''
             CREATE TABLE IF NOT EXISTS users (
@@ -135,7 +137,8 @@ def init_db():
                     db.execute('INSERT INTO invoice_items (invoice_id, product_id, product_name, quantity, unit_price, total) VALUES (?,?,?,?,?,?)',
                                (inv_id, it[0], it[1], it[2], it[3], it[4]))
 
-init_db()
+if not os.environ.get('VERCEL'):
+    init_db()
 
 # ── HELPERS ──────────────────────────────────────────────────────────────────
 def next_invoice_number(business_id=None):
@@ -250,10 +253,10 @@ def business_setup():
             error = 'Enter a business name of up to 120 characters.'
         else:
             with get_db() as db:
-                cur = db.execute('INSERT INTO businesses (name) VALUES (?)', (name,))
+                cur = db.execute('INSERT INTO businesses (name) VALUES (?)' + (' RETURNING id' if os.environ.get('DATABASE_URL') else ''), (name,))
                 db.execute(
                     'INSERT INTO business_memberships (business_id,user_id,role) VALUES (?,?,?)',
-                    (cur.lastrowid, session['user_id'], 'owner')
+                    ((cur.fetchone()['id'] if os.environ.get('DATABASE_URL') else cur.lastrowid), session['user_id'], 'owner')
                 )
             return redirect(url_for('business_profile'))
     return render_template('business_setup.html', error=error)
