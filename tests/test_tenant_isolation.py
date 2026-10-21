@@ -16,6 +16,7 @@ class TenantIsolationTests(unittest.TestCase):
         os.environ['FERMI_SEED_DEMO'] = 'true'
         import app
         cls.app_module = app
+        app.init_db()
         cls.client = app.app.test_client()
         with app.get_db() as db:
             db.execute("INSERT INTO users (name,email,password) VALUES ('A','a@example.com','unused')")
