@@ -62,6 +62,20 @@ class POSTests(unittest.TestCase):
             self.assertEqual(db.execute("SELECT stock FROM products WHERE id=?", (self.product_id,)).fetchone()[0], 3)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM invoices WHERE business_id=?", (self.business_id,)).fetchone()[0], 0)
 
+    def test_pdf_matches_invoice_data_and_is_downloadable(self):
+        response = self.client.post('/invoices/create', json={
+            'customer_name': 'online order',
+            'status': 'paid',
+            'notes': 'Created from Fermi POS',
+            'items': [{'product_id': self.product_id, 'quantity': 2}]
+        })
+        self.assertEqual(response.status_code, 200)
+        pdf = self.client.get('/invoices/{}/pdf'.format(response.json['invoice_id']))
+        self.assertEqual(pdf.status_code, 200, pdf.get_data(as_text=True)[:300] if pdf.status_code != 200 else '')
+        self.assertEqual(pdf.mimetype, 'application/pdf')
+        self.assertTrue(pdf.data.startswith(b'%PDF'))
+        self.assertGreater(len(pdf.data), 1800)
+
     def test_pos_requires_login(self):
         with self.client.session_transaction() as sess:
             sess.clear()
