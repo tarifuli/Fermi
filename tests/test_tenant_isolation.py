@@ -13,6 +13,7 @@ class TenantIsolationTests(unittest.TestCase):
         sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
         os.chdir(cls.tempdir.name)
         os.environ['SECRET_KEY'] = 'test-only-secret'
+        os.environ['FERMI_SEED_DEMO'] = 'true'
         import app
         cls.app_module = app
         cls.client = app.app.test_client()
