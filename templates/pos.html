@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Point of Sale — Fermi{% endblock %}
+{% block topbar_title %}Point of Sale{% endblock %}
+{% block extra_styles %}
+<style>
+.pos-head{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-bottom:22px}
+.pos-head h1{font-size:25px;color:var(--navy)}
+.pos-head p{color:var(--muted);font-size:13px;margin-top:5px}
+.pos-layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:20px;align-items:start}
+.pos-panel{background:#fff;border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:22px}
+.pos-toolbar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+.pos-toolbar input{flex:1;min-width:190px}
+.pos-toolbar select{min-width:140px}
+.pos-catalog{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+.pos-product{background:#fff;border:1px solid var(--border);border-radius:12px;padding:17px;text-align:left;cursor:pointer;transition:box-shadow .15s,border-color .15s;min-height:146px}
+.pos-product:hover:not(:disabled),.pos-product:focus-visible{border-color:var(--blue);box-shadow:0 4px 16px #1a3a5c18}
+.pos-product:disabled{opacity:.48;cursor:not-allowed}
+.pos-product strong{display:block;color:var(--navy);font-size:15px;overflow-wrap:anywhere}
+.pos-product small{display:block;color:var(--muted);font-size:12px;margin:7px 0 15px}
+.pos-product .price{color:var(--teal);font-weight:800;font-size:18px}
+.pos-stock{font-size:11px;color:var(--muted);float:right;margin-top:6px}
+.pos-cart{position:sticky;top:82px}
+.pos-cart h2{font-size:19px;color:var(--navy)}
+.pos-cart-items{margin:16px 0;max-height:310px;overflow-y:auto}
+.pos-line{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;border-bottom:1px solid var(--border);padding:13px 0}
+.pos-line strong{font-size:13px;color:var(--navy)}
+.pos-line small{display:block;font-size:11px;color:var(--muted);margin-top:3px}
+.pos-controls{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:7px}
+.pos-controls button{border:1px solid var(--border);border-radius:6px;background:white;cursor:pointer;min-width:28px;height:28px}
+.pos-controls button:disabled{opacity:.4;cursor:not-allowed}
+.pos-summary{border-top:1px solid var(--border);padding-top:12px}
+.pos-summary-row{display:flex;justify-content:space-between;margin:10px 0;font-size:13px;color:var(--muted)}
+.pos-summary-row.total{font-size:19px;font-weight:800;color:var(--navy);margin-top:16px}
+.pos-label{display:block;font-size:12px;font-weight:700;margin:16px 0 6px;color:var(--navy)}
+.pos-submit{width:100%;justify-content:center;margin-top:18px;min-height:45px}
+.pos-empty{color:var(--muted);font-size:13px;line-height:1.6;padding:22px 0}
+.pos-message{margin-top:14px;font-size:13px;line-height:1.5}
+.pos-info{font-size:12px;color:var(--muted);margin-top:14px;line-height:1.6}
+@media(max-width:980px){.pos-layout{grid-template-columns:1fr}.pos-cart{position:static}}
+@media(max-width:560px){.pos-panel{padding:16px}.pos-catalog{grid-template-columns:repeat(2,minmax(0,1fr))}.pos-product{padding:12px}.pos-head{align-items:flex-start;flex-direction:column}}
+</style>
+{% endblock %}
+{% block content %}
+<div class="pos-head"><div><h1>Quick sale</h1><p>Search products, build a cart, and complete a sale in seconds.</p></div><a class="btn btn-ghost" href="{{ url_for('invoices') }}">View sales history →</a></div>
+<div class="pos-layout">
+<section class="pos-panel" aria-labelledby="catalogHeading">
+  <h2 id="catalogHeading" style="font-size:17px;color:var(--navy);margin-bottom:16px">Products</h2>
+  <div class="pos-toolbar"><input class="form-control" id="posSearch" type="search" placeholder="Search by name or SKU…" aria-label="Search products"><select class="form-control" id="posCategory" aria-label="Filter category"><option value="">All categories</option></select></div>
+  <div class="pos-catalog" id="posCatalog" aria-live="polite"></div>
+  <p id="posNoResults" class="pos-empty" hidden>No products found. Try another search.</p>
+  {% if not products %}<p class="pos-empty">Your inventory is empty. <a href="{{ url_for('products') }}">Add products</a> to start selling.</p>{% endif %}
+</section>
+<aside class="pos-panel pos-cart" aria-labelledby="cartHeading">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h2 id="cartHeading">Current sale</h2><button class="btn btn-ghost btn-sm" id="clearCart" type="button">Clear</button></div>
+  <div class="pos-cart-items" id="posCartItems" aria-live="polite"><p class="pos-empty">Your cart is empty. Select a product to begin.</p></div>
+  <div class="pos-summary"><div class="pos-summary-row"><span>Subtotal</span><strong id="posSubtotal">৳0.00</strong></div><div class="pos-summary-row"><span>Tax (5%)</span><strong id="posTax">৳0.00</strong></div><div class="pos-summary-row total"><span>Total</span><span id="posTotal">৳0.00</span></div></div>
+  <label class="pos-label" for="posCustomer">Customer name</label><input class="form-control" id="posCustomer" maxlength="200" value="Walk-in Customer" required>
+  <label class="pos-label" for="posPayment">Payment status</label><select class="form-control" id="posPayment"><option value="paid">Paid</option><option value="pending">Pay later (pending)</option></select>
+  <button type="button" class="btn btn-primary pos-submit" id="posCheckout" disabled>Complete sale</button>
+  <p id="posMessage" class="pos-message" role="status" aria-live="polite"></p>
+  <p class="pos-info">Stock is validated again at checkout. A successful sale creates an invoice and deducts inventory automatically. No payment gateway is connected.</p>
+</aside>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+const products = {{ products|tojson }};
+const cart = new Map();
+const byId = new Map(products.map(p=>[p.id,p]));
+const money = value => '৳'+Number(value).toLocaleString('en-BD',{minimumFractionDigits:2,maximumFractionDigits:2});
+const $ = id => document.getElementById(id);
+let busy = false;
+const categories = [...new Set(products.map(p=>p.category).filter(Boolean))].sort();
+categories.forEach(c=>{const opt=document.createElement('option');opt.value=c;opt.textContent=c;$('posCategory').append(opt)});
+function available(p){return p.stock-(cart.get(p.id)||0)}
+function renderCatalog(){
+ const q=$('posSearch').value.trim().toLowerCase(), cat=$('posCategory').value;
+ const matches=products.filter(p=>(!cat||p.category===cat)&&(!q||(p.name+' '+p.sku).toLowerCase().includes(q)));
+ $('posCatalog').replaceChildren();
+ matches.forEach(p=>{
+   const btn=document.createElement('button');btn.type='button';btn.className='pos-product';
+   btn.disabled=busy||available(p)<=0;btn.setAttribute('aria-label','Add '+p.name+' to cart');
+   const name=document.createElement('strong');name.textContent=p.name;
+   const sku=document.createElement('small');sku.textContent=(p.sku||'No SKU')+(p.category?' · '+p.category:'');
+   const price=document.createElement('span');price.className='price';price.textContent=money(p.price);
+   const stock=document.createElement('span');stock.className='pos-stock';stock.textContent=available(p)+' left';
+   btn.append(name,sku,price,stock);btn.addEventListener('click',()=>changeQty(p.id,1));
+   $('posCatalog').append(btn);
+ });
+ $('posNoResults').hidden=matches.length>0||products.length===0;
+}
+function changeQty(id,delta){
+ if(busy)return;
+ const p=byId.get(id),qty=cart.get(id)||0,next=qty+delta;
+ if(!p||next>p.stock||next<0)return;
+ if(next===0)cart.delete(id);else cart.set(id,next);
+ $('posMessage').textContent='';render();
+}
+function render(){
+ $('posCartItems').replaceChildren();
+ let subtotalCents=0;
+ for(const [id,qty] of cart){
+   const p=byId.get(id);
+   subtotalCents+=Math.round(p.price*100)*qty;
+   const row=document.createElement('div');row.className='pos-line';
+   const info=document.createElement('div'),title=document.createElement('strong'),detail=document.createElement('small');
+   title.textContent=p.name;detail.textContent=money(p.price)+' × '+qty;info.append(title,detail);
+   const side=document.createElement('div');side.style.textAlign='right';
+   const total=document.createElement('strong');total.textContent=money(p.price*qty);
+   const controls=document.createElement('div');controls.className='pos-controls';
+   for(const [label,delta] of [['−',-1],['+',1]]){
+     const b=document.createElement('button');b.type='button';b.textContent=label;b.setAttribute('aria-label',(delta===1?'Increase ':'Decrease ')+p.name);
+     b.disabled=busy||(delta===1&&qty>=p.stock);b.addEventListener('click',()=>changeQty(id,delta));controls.append(b);
+   }
+   side.append(total,controls);row.append(info,side);$('posCartItems').append(row);
+ }
+ if(!cart.size){const empty=document.createElement('p');empty.className='pos-empty';empty.textContent='Your cart is empty. Select a product to begin.';$('posCartItems').append(empty)}
+ const taxCents=Math.round(subtotalCents*0.05);
+ $('posSubtotal').textContent=money(subtotalCents/100);$('posTax').textContent=money(taxCents/100);$('posTotal').textContent=money((subtotalCents+taxCents)/100);
+ $('posCheckout').disabled=busy||!cart.size;$('clearCart').disabled=busy||!cart.size;
+ renderCatalog();
+}
+$('posSearch').addEventListener('input',renderCatalog);$('posCategory').addEventListener('change',renderCatalog);
+$('clearCart').addEventListener('click',()=>{if(!busy){cart.clear();render()}});
+$('posCheckout').addEventListener('click',async()=>{
+ if(busy||!cart.size)return;
+ const customer=$('posCustomer').value.trim();
+ if(!customer){$('posMessage').textContent='Enter a customer name.';$('posCustomer').focus();return}
+ busy=true;render();$('posCheckout').textContent='Saving sale…';
+ try {
+   const payload={customer_name:customer,status:$('posPayment').value,notes:'Created from Fermi POS',items:[...cart].map(([product_id,quantity])=>({product_id,quantity}))};
+   const response=await fetch({{ url_for('create_invoice')|tojson }},{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+   const result=await response.json();
+   if(!response.ok||!result.success)throw Error(result.error||'Unable to save sale');
+   window.location.assign('/invoices/'+result.invoice_id);
+ } catch(err) {
+   $('posMessage').textContent=err.message||'Unable to complete sale. Please try again.';
+   busy=false;$('posCheckout').textContent='Complete sale';render();
+ }
+});
+render();
+})();
+</script>
+{% endblock %}
