@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Customers — Fermi{% endblock %}
+{% block topbar_title %}Customers{% endblock %}
+{% block content %}
+<div class="page-header"><div><h1 class="page-title">Your customers</h1><p style="color:var(--muted);font-size:13px;margin-top:6px">Customer profiles are collected automatically from your invoices.</p></div><a href="{{ url_for('new_invoice') }}" class="btn btn-primary">+ New invoice</a></div>
+<div class="stats-grid" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+ <div class="stat-card"><div class="stat-label">Customers</div><div class="stat-value">{{ customers|length }}</div><div class="stat-sub">With invoice history</div></div>
+ <div class="stat-card"><div class="stat-label">Invoices</div><div class="stat-value">{{ customers|sum(attribute='invoice_count') }}</div><div class="stat-sub">Across your customers</div></div>
+</div>
+<div class="card">
+ <div class="card-header" style="gap:12px;flex-wrap:wrap"><span class="card-title">Customer directory</span><input id="customerSearch" type="search" class="form-control" style="max-width:300px" placeholder="Search customer names…" aria-label="Search customers"></div>
+ <div class="table-wrap"><table><thead><tr><th>Customer</th><th>Invoices</th><th>Paid revenue (BDT)</th><th>Last invoice</th><th></th></tr></thead><tbody id="customerRows">
+ {% for customer in customers %}
+ <tr data-customer="{{ customer.customer_name|lower|e }}"><td><strong>{{ customer.customer_name }}</strong></td><td>{{ customer.invoice_count }}</td><td>৳{{ "{:,.2f}".format(customer.paid_total) }}</td><td>{{ customer.last_invoice|string|truncate(10, True, '') }}</td><td><a class="btn btn-ghost btn-sm" href="{{ url_for('customer_history', name=customer.customer_key) }}">View history →</a></td></tr>
+ {% else %}<tr><td colspan="5" class="empty-state">No customers yet. Create a test invoice to get started.</td></tr>{% endfor %}
+ </tbody></table></div><p id="noMatches" style="display:none;color:var(--muted);padding:18px">No customers match your search.</p>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+const search=document.getElementById('customerSearch');
+search.addEventListener('input',()=>{let visible=0;document.querySelectorAll('#customerRows tr[data-customer]').forEach(row=>{const matches=row.dataset.customer.includes(search.value.trim().toLowerCase());row.hidden=!matches;if(matches)visible++});document.getElementById('noMatches').style.display=visible===0&&search.value.trim()?'block':'none'});
+</script>{% endblock %}
