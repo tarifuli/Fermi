@@ -96,16 +96,6 @@ def init_db():
                 FOREIGN KEY (product_id) REFERENCES products(id)
             );
         ''')
-        db.execute('''CREATE TABLE IF NOT EXISTS expenses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            business_id INTEGER NOT NULL REFERENCES businesses(id),
-            description TEXT NOT NULL,
-            category TEXT NOT NULL,
-            amount NUMERIC NOT NULL CHECK(amount > 0),
-            expense_date TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )''')
-        db.execute('CREATE INDEX IF NOT EXISTS idx_expenses_business_date ON expenses(business_id, expense_date)')
         for table in ('products', 'invoices'):
             columns = {row['name'] for row in db.execute(f'PRAGMA table_info({table})')}
             if 'business_id' not in columns:
