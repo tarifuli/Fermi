@@ -313,6 +313,67 @@ def dashboard():
                            has_business=business_id is not None,
                            sales_7=get_sales_data(7, business_id)[:5], sales_30=get_sales_data(30, business_id)[:5])
 
+@app.route('/analytics')
+@login_required
+def analytics():
+    """Business-scoped sales report from persisted invoices, without expense/P&L tracking."""
+    from datetime import date, timedelta
+    from decimal import Decimal
+    business_id = current_business_id()
+    if business_id is None:
+        return redirect(url_for('business_setup'))
+    period = request.args.get('days', '30')
+    if period not in ('7', '30', '90'):
+        period = '30'
+    days = int(period)
+    today = date.today()
+    first_day = today - timedelta(days=days - 1)
+    with get_db() as db:
+        invoices = db.execute(
+            'SELECT id, created_at, total, status, customer_name FROM invoices WHERE business_id=? AND created_at>=? ORDER BY created_at',
+            (business_id, first_day.isoformat())
+        ).fetchall()
+        product_rows = db.execute('''
+            SELECT ii.product_name, ii.quantity, ii.total, i.created_at, i.status
+            FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id
+            WHERE i.business_id=? AND i.created_at>=?
+        ''', (business_id, first_day.isoformat())).fetchall()
+    daily = {str(first_day + timedelta(days=n)): Decimal('0') for n in range(days)}
+    paid_revenue = Decimal('0')
+    pending_amount = Decimal('0')
+    paid_count = 0
+    pending_count = 0
+    customers = set()
+    for inv in invoices:
+        day = str(inv['created_at'])[:10]
+        if day not in daily:
+            continue
+        amount = Decimal(str(inv['total']))
+        if inv['status'] == 'paid':
+            daily[day] += amount
+            paid_revenue += amount
+            paid_count += 1
+            customers.add(inv['customer_name'].strip().lower())
+        elif inv['status'] == 'pending':
+            pending_amount += amount
+            pending_count += 1
+    products = {}
+    for item in product_rows:
+        if item['status'] != 'paid' or str(item['created_at'])[:10] not in daily:
+            continue
+        name = item['product_name']
+        entry = products.setdefault(name, {'name': name, 'units': 0, 'revenue': Decimal('0')})
+        entry['units'] += int(item['quantity'])
+        entry['revenue'] += Decimal(str(item['total']))
+    top_products = sorted(products.values(), key=lambda p: (-p['units'], p['name']))[:8]
+    chart = [{'date': day, 'revenue': float(amount)} for day, amount in daily.items()]
+    return render_template('analytics.html', days=days, chart=chart,
+                           paid_revenue=paid_revenue, pending_amount=pending_amount,
+                           paid_count=paid_count, pending_count=pending_count,
+                           unique_customers=len(customers), top_products=top_products,
+                           avg_order=(paid_revenue / paid_count if paid_count else Decimal('0')))
+
+
 @app.route('/products')
 @login_required
 def products():
