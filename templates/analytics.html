@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Sales Analytics — Fermi{% endblock %}
+{% block topbar_title %}Sales Analytics{% endblock %}
+{% block extra_styles %}
+<style>
+.analytics-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:22px;flex-wrap:wrap}
+.analytics-head h1{font-size:24px;color:var(--navy)}
+.analytics-head p{color:var(--muted);font-size:13px;margin-top:6px}
+.periods{display:flex;gap:6px;background:#fff;border:1px solid var(--border);padding:5px;border-radius:10px}
+.periods a{text-decoration:none;padding:9px 14px;border-radius:7px;color:var(--navy);font-size:13px;font-weight:600}
+.periods a.selected{background:var(--navy);color:white}
+.analytics-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(270px,1fr);gap:18px}
+.analytics-card{background:white;border:1px solid var(--border);border-radius:14px;padding:22px;box-shadow:var(--shadow)}
+.analytics-card h2{font-size:17px;color:var(--navy);margin-bottom:8px}
+.analytics-chart{height:310px;position:relative;margin-top:18px}
+.rank{display:flex;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid var(--border)}
+.rank:last-child{border:0}.rank-num{background:var(--sky);color:var(--blue);border-radius:50%;width:26px;height:26px;display:grid;place-items:center;font-size:12px;flex-shrink:0}
+.rank-info{flex:1;min-width:0}.rank-info strong{display:block;font-size:13px;color:var(--navy);overflow-wrap:anywhere}.rank-info small{color:var(--muted);font-size:12px}
+.rank-value{font-size:13px;color:var(--teal);font-weight:700;white-space:nowrap}
+.analytics-note{color:var(--muted);font-size:12px;line-height:1.6;margin-top:18px}
+@media(max-width:900px){.analytics-grid{grid-template-columns:1fr}}
+@media(max-width:520px){.analytics-card{padding:16px}.periods a{padding:8px 10px}}
+</style>
+{% endblock %}
+{% block content %}
+<div class="analytics-head"><div><h1>Understand your sales</h1><p>Track paid revenue, outstanding invoices, and your best-selling products.</p></div>
+<nav class="periods" aria-label="Sales reporting period">{% for period in [7,30,90] %}<a href="{{ url_for('analytics', days=period) }}" class="{% if days == period %}selected{% endif %}" {% if days == period %}aria-current="page"{% endif %}>{{ period }} days</a>{% endfor %}</nav></div>
+<div class="stats-grid">
+<div class="stat-card"><div class="stat-label">Paid revenue</div><div class="stat-value">৳{{ "{:,.2f}".format(paid_revenue) }}</div><div class="stat-sub">{{ paid_count }} paid invoices</div></div>
+<div class="stat-card"><div class="stat-label">Pending amount</div><div class="stat-value">৳{{ "{:,.2f}".format(pending_amount) }}</div><div class="stat-sub">{{ pending_count }} pending invoices</div></div>
+<div class="stat-card"><div class="stat-label">Average paid invoice</div><div class="stat-value">৳{{ "{:,.2f}".format(avg_order) }}</div><div class="stat-sub">Paid invoices only</div></div>
+<div class="stat-card"><div class="stat-label">Paying customers</div><div class="stat-value">{{ unique_customers }}</div><div class="stat-sub">Unique invoice names</div></div>
+</div>
+<div class="analytics-grid">
+<section class="analytics-card"><h2>Daily paid revenue</h2><p style="color:var(--muted);font-size:12px">Last {{ days }} days · BDT</p><div class="analytics-chart"><canvas id="analyticsRevenue" role="img" aria-label="Daily paid revenue chart"></canvas></div></section>
+<section class="analytics-card"><h2>Best-selling products</h2><p style="color:var(--muted);font-size:12px">Ranked by units on paid invoices</p>
+{% for p in top_products %}<div class="rank"><div class="rank-num">{{ loop.index }}</div><div class="rank-info"><strong>{{ p.name }}</strong><small>{{ p.units }} units sold</small></div><span class="rank-value">৳{{ "{:,.2f}".format(p.revenue) }}</span></div>
+{% else %}<p class="empty-state">No paid sales in this period. <a href="{{ url_for('pos') }}">Make a test sale</a> to see analytics.</p>{% endfor %}
+</section>
+</div>
+<p class="analytics-note">Revenue figures include invoice tax and exclude pending invoices. Product rankings use line-item totals before tax. Customer counts are grouped by invoice name, not unique customer IDs. These are sales metrics, not profit-and-loss figures.</p>
+{% endblock %}
+{% block scripts %}
+<script>
+const points={{ chart|tojson }};
+const chartElement=document.getElementById('analyticsRevenue');
+if(window.Chart&&chartElement){new Chart(chartElement,{type:'bar',data:{labels:points.map(p=>p.date.slice(5)),datasets:[{label:'Paid revenue (BDT)',data:points.map(p=>p.revenue),backgroundColor:'rgba(46,109,164,.23)',borderColor:'#2E6DA4',borderWidth:1,borderRadius:5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>'৳'+Number(ctx.parsed.y).toLocaleString('en-BD',{minimumFractionDigits:2})}}},scales:{y:{beginAtZero:true,ticks:{callback:v=>'৳'+Number(v).toLocaleString('en-BD')}},x:{ticks:{maxTicksLimit:10},grid:{display:false}}}}})}
+</script>
+{% endblock %}
