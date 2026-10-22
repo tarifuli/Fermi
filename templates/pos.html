@@ -54,6 +54,8 @@
   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h2 id="cartHeading">Current sale</h2><button class="btn btn-ghost btn-sm" id="clearCart" type="button">Clear</button></div>
   <div class="pos-cart-items" id="posCartItems" aria-live="polite"><p class="pos-empty">Your cart is empty. Select a product to begin.</p></div>
   <div class="pos-summary"><div class="pos-summary-row"><span>Subtotal</span><strong id="posSubtotal">৳0.00</strong></div><div class="pos-summary-row"><span>Tax (5%)</span><strong id="posTax">৳0.00</strong></div><div class="pos-summary-row total"><span>Total</span><span id="posTotal">৳0.00</span></div></div>
+  <label class="pos-label" for="posCustomerSelect">Existing customer (optional)</label><select class="form-control" id="posCustomerSelect"><option value="">Walk-in / new customer</option></select>
+  <p class="pos-info" id="posCustomerInfo" aria-live="polite">Select a saved customer to fill in their details.</p>
   <label class="pos-label" for="posCustomer">Customer name</label><input class="form-control" id="posCustomer" maxlength="200" value="Walk-in Customer" required>
   <label class="pos-label" for="posPayment">Payment status</label><select class="form-control" id="posPayment"><option value="paid">Paid</option><option value="pending">Pay later (pending)</option></select>
   <button type="button" class="btn btn-primary pos-submit" id="posCheckout" disabled>Complete sale</button>
@@ -67,6 +69,23 @@
 (() => {
 const products = {{ products|tojson }};
 const cart = new Map();
+let savedCustomers = new Map();
+fetch('/api/customers/lookup').then(r=>{if(!r.ok)throw Error('Customer lookup unavailable');return r.json()}).then(data=>{
+  for(const customer of data.customers){
+    savedCustomers.set(customer.key,customer);
+    const option=document.createElement('option');option.value=customer.key;option.textContent=customer.name;
+    $('posCustomerSelect').append(option);
+  }
+}).catch(()=>{$('posCustomerInfo').textContent='Customer lookup unavailable. You can still enter a new customer.'});
+$('posCustomerSelect').addEventListener('change',()=>{
+ const customer=savedCustomers.get($('posCustomerSelect').value);
+ if(customer){$('posCustomer').value=customer.name;$('posCustomerInfo').textContent=[customer.email,customer.phone].filter(Boolean).join(' · ')||'Saved customer selected'}
+ else{$('posCustomer').value='Walk-in Customer';$('posCustomerInfo').textContent='Enter a customer name for a new sale'}
+});
+$('posCustomer').addEventListener('input',()=>{
+ const selected=savedCustomers.get($('posCustomerSelect').value);
+ if(selected&&$('posCustomer').value!==selected.name){$('posCustomerSelect').value='';$('posCustomerInfo').textContent='New customer name entered'}
+});
 const byId = new Map(products.map(p=>[p.id,p]));
 const money = value => '৳'+Number(value).toLocaleString('en-BD',{minimumFractionDigits:2,maximumFractionDigits:2});
 const $ = id => document.getElementById(id);
@@ -129,7 +148,7 @@ $('posCheckout').addEventListener('click',async()=>{
  if(!customer){$('posMessage').textContent='Enter a customer name.';$('posCustomer').focus();return}
  busy=true;render();$('posCheckout').textContent='Saving sale…';
  try {
-   const payload={customer_name:customer,status:$('posPayment').value,notes:'Created from Fermi POS',items:[...cart].map(([product_id,quantity])=>({product_id,quantity}))};
+   const payload={customer_name:customer,customer_key:$('posCustomerSelect').value||null,status:$('posPayment').value,notes:'Created from Fermi POS',items:[...cart].map(([product_id,quantity])=>({product_id,quantity}))};
    const response=await fetch({{ url_for('create_invoice')|tojson }},{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
    const result=await response.json();
    if(!response.ok||!result.success)throw Error(result.error||'Unable to save sale');
