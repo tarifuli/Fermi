@@ -142,6 +142,26 @@ class POSTests(unittest.TestCase):
         self.assertIn(b'Pending balance', history.data)
         self.assertIn(b'Save as PDF', history.data)
 
+    def test_editable_customer_profile_preserves_invoice(self):
+        from app import get_db
+        sale = self.client.post('/invoices/create', json={
+            'customer_name': 'Original Buyer', 'status': 'paid',
+            'items': [{'product_id': self.product_id, 'quantity': 1}]
+        })
+        self.assertEqual(sale.status_code, 200)
+        saved = self.client.post('/customers/profile?name=original%20buyer', data={
+            'display_name': 'Preferred Customer', 'email': 'customer@example.test',
+            'phone': '01700000000', 'notes': 'Prefers afternoon delivery'
+        }, follow_redirects=True)
+        self.assertEqual(saved.status_code, 200)
+        self.assertIn(b'Preferred Customer', saved.data)
+        self.assertIn(b'Prefers afternoon delivery', saved.data)
+        with get_db() as db:
+            invoice = db.execute('SELECT customer_name FROM invoices WHERE id=?',
+                                 (sale.json['invoice_id'],)).fetchone()
+            self.assertEqual(invoice['customer_name'], 'Original Buyer')
+        self.assertEqual(self.client.get('/customers/profile?name=unknown').status_code, 302)
+
     def test_pos_requires_login(self):
         with self.client.session_transaction() as sess:
             sess.clear()
