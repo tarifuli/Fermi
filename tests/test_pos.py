@@ -121,6 +121,27 @@ class POSTests(unittest.TestCase):
             sess.clear()
         self.assertEqual(self.client.get('/analytics').status_code, 302)
 
+    def test_customer_insights_and_purchase_history(self):
+        first = self.client.post('/invoices/create', json={
+            'customer_name': 'Repeat Buyer', 'status': 'paid',
+            'items': [{'product_id': self.product_id, 'quantity': 1}]
+        })
+        second = self.client.post('/invoices/create', json={
+            'customer_name': 'Repeat Buyer', 'status': 'pending',
+            'items': [{'product_id': self.product_id, 'quantity': 1}]
+        })
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        directory = self.client.get('/customers')
+        self.assertEqual(directory.status_code, 200)
+        self.assertIn(b'Returning customers', directory.data)
+        history = self.client.get('/customers/history?name=repeat%20buyer')
+        self.assertEqual(history.status_code, 200)
+        self.assertIn(b'Frequently purchased products', history.data)
+        self.assertIn(b'Notebook', history.data)
+        self.assertIn(b'Pending balance', history.data)
+        self.assertIn(b'Save as PDF', history.data)
+
     def test_pos_requires_login(self):
         with self.client.session_transaction() as sess:
             sess.clear()
