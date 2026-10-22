@@ -91,6 +91,36 @@ class POSTests(unittest.TestCase):
             response = self.client.post('/products/adjust/{}'.format(self.product_id), json={'delta': delta})
             self.assertEqual(response.status_code, 400, str(delta))
 
+    def test_sales_analytics_is_business_scoped(self):
+        from app import get_db
+        sale = self.client.post('/invoices/create', json={
+            'customer_name': 'Analytics Test', 'status': 'paid',
+            'items': [{'product_id': self.product_id, 'quantity': 1}]
+        })
+        self.assertEqual(sale.status_code, 200)
+        report = self.client.get('/analytics?days=30')
+        self.assertEqual(report.status_code, 200)
+        self.assertIn(b'Analytics Test' if False else b'Paid revenue', report.data)
+        self.assertIn(b'Notebook', report.data)
+        with get_db() as db:
+            db.execute("INSERT INTO businesses (name) VALUES (?)", ('Other Shop',))
+            other_id = db.execute("SELECT id FROM businesses WHERE name=?", ('Other Shop',)).fetchone()[0]
+            db.execute("""INSERT INTO invoices
+                (invoice_number,customer_name,subtotal,tax,total,status,business_id)
+                VALUES (?,?,?,?,?,?,?)""",
+                ('OTHER-100','Secret Buyer',999,49.95,1048.95,'paid',other_id))
+        isolated = self.client.get('/analytics?days=30')
+        self.assertNotIn(b'Secret Buyer', isolated.data)
+        self.assertNotIn(b'1,048.95', isolated.data)
+
+    def test_analytics_period_validation_and_authentication(self):
+        self.assertEqual(self.client.get('/analytics?days=invalid').status_code, 200)
+        for days in (7, 30, 90):
+            self.assertEqual(self.client.get('/analytics?days='+str(days)).status_code, 200)
+        with self.client.session_transaction() as sess:
+            sess.clear()
+        self.assertEqual(self.client.get('/analytics').status_code, 302)
+
     def test_pos_requires_login(self):
         with self.client.session_transaction() as sess:
             sess.clear()
