@@ -69,6 +69,9 @@
 (() => {
 const products = {{ products|tojson }};
 const cart = new Map();
+const byId = new Map(products.map(p=>[p.id,p]));
+const money = value => '৳'+Number(value).toLocaleString('en-BD',{minimumFractionDigits:2,maximumFractionDigits:2});
+const $ = id => document.getElementById(id);
 let savedCustomers = new Map();
 fetch('/api/customers/lookup').then(r=>{if(!r.ok)throw Error('Customer lookup unavailable');return r.json()}).then(data=>{
   for(const customer of data.customers){
@@ -86,9 +89,7 @@ $('posCustomer').addEventListener('input',()=>{
  const selected=savedCustomers.get($('posCustomerSelect').value);
  if(selected&&$('posCustomer').value!==selected.name){$('posCustomerSelect').value='';$('posCustomerInfo').textContent='New customer name entered'}
 });
-const byId = new Map(products.map(p=>[p.id,p]));
-const money = value => '৳'+Number(value).toLocaleString('en-BD',{minimumFractionDigits:2,maximumFractionDigits:2});
-const $ = id => document.getElementById(id);
+
 let busy = false;
 const categories = [...new Set(products.map(p=>p.category).filter(Boolean))].sort();
 categories.forEach(c=>{const opt=document.createElement('option');opt.value=c;opt.textContent=c;$('posCategory').append(opt)});
