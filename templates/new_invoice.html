@@ -52,6 +52,7 @@
 
     <div class="card">
       <div class="card-title" style="margin-bottom:16px;">Customer Information</div>
+      <div class="form-group"><label class="form-label" for="cust-select">Choose an existing customer (optional)</label><select id="cust-select" class="form-control"><option value="">New customer — enter details below</option></select><p id="cust-hint" style="font-size:12px;color:var(--muted);margin-top:6px">Existing customers automatically fill contact details.</p></div>
       <div class="grid-2">
         <div class="form-group">
           <label class="form-label">Customer Name *</label>
@@ -129,6 +130,40 @@
 <script>
 const products = JSON.parse(document.getElementById('products-data').textContent);
 let itemCount = 0;
+const savedCustomers = new Map();
+fetch('/api/customers/lookup').then(r=>{if(!r.ok)throw Error('Customer lookup unavailable');return r.json()}).then(data=>{
+  data.customers.forEach(customer=>{
+    savedCustomers.set(customer.key,customer);
+    const option=document.createElement('option');option.value=customer.key;option.textContent=customer.name;
+    document.getElementById('cust-select').append(option);
+  });
+}).catch(()=>{document.getElementById('cust-hint').textContent='Saved customers unavailable. Enter customer details manually.'});
+document.getElementById('cust-select').addEventListener('change',event=>{
+ const customer=savedCustomers.get(event.target.value);
+ if(customer){
+  document.getElementById('cust-name').value=customer.name;
+  document.getElementById('cust-email').value=customer.email||'';
+  document.getElementById('cust-phone').value=customer.phone||'';
+  document.getElementById('cust-hint').textContent='Using saved customer profile details.';
+ }else{
+  document.getElementById('cust-name').value='';
+  document.getElementById('cust-email').value='';
+  document.getElementById('cust-phone').value='';
+  document.getElementById('cust-hint').textContent='Enter details for a new customer.';
+ }
+});
+['cust-name','cust-email','cust-phone'].forEach(id=>{
+ document.getElementById(id).addEventListener('input',()=>{
+  const selected=savedCustomers.get(document.getElementById('cust-select').value);
+  if(selected&&(
+    document.getElementById('cust-name').value!==selected.name||
+    document.getElementById('cust-email').value!==(selected.email||'')||
+    document.getElementById('cust-phone').value!==(selected.phone||''))){
+    document.getElementById('cust-select').value='';
+    document.getElementById('cust-hint').textContent='Using manually entered customer details.';
+  }
+ });
+});
 
 function showAlert(msg, type='success') {
   const b = document.getElementById('alert-box');
@@ -244,6 +279,7 @@ async function saveInvoice() {
   const payload = {
     invoice_number: document.getElementById('inv-number').value,
     customer_name:  custName,
+    customer_key: document.getElementById('cust-select').value || null,
     customer_email: document.getElementById('cust-email').value,
     customer_phone: document.getElementById('cust-phone').value,
     status:         document.getElementById('inv-status').value,
