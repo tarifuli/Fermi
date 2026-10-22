@@ -476,7 +476,11 @@ def customers():
             GROUP BY LOWER(TRIM(customer_name))
             ORDER BY MAX(created_at) DESC
         ''', (business_id,)).fetchall()
-    return render_template('customers.html', customers=[dict(row) for row in rows])
+    directory = [dict(row) for row in rows]
+    returning = sum(1 for row in directory if row['invoice_count'] > 1)
+    paid_customers = sum(1 for row in directory if row['paid_total'] > 0)
+    return render_template('customers.html', customers=directory,
+                           returning_customers=returning, paid_customers=paid_customers)
 
 
 @app.route('/customers/history')
@@ -500,11 +504,26 @@ def customer_history():
         return redirect(url_for('customers'))
     invoices_for_customer = [dict(row) for row in rows]
     paid_total = sum((row['total'] for row in invoices_for_customer if row['status'] == 'paid'), 0)
+    with get_db() as db:
+        product_rows = db.execute('''
+            SELECT ii.product_name, SUM(ii.quantity) AS units,
+                   SUM(ii.total) AS revenue
+            FROM invoice_items ii
+            JOIN invoices i ON i.id=ii.invoice_id
+            WHERE i.business_id=? AND LOWER(TRIM(i.customer_name))=? AND i.status='paid'
+            GROUP BY ii.product_name
+            ORDER BY SUM(ii.quantity) DESC, ii.product_name
+            LIMIT 5
+        ''', (business_id, customer_key)).fetchall()
+    paid_invoices = sum(1 for row in invoices_for_customer if row['status'] == 'paid')
+    pending_total = sum((row['total'] for row in invoices_for_customer if row['status'] == 'pending'), 0)
     return render_template('customer_history.html',
                            customer_name=invoices_for_customer[0]['customer_name'],
                            customer_email=next((row['customer_email'] for row in invoices_for_customer if row['customer_email']), ''),
                            customer_phone=next((row['customer_phone'] for row in invoices_for_customer if row['customer_phone']), ''),
-                           paid_total=paid_total,
+                           paid_total=paid_total, paid_invoices=paid_invoices,
+                           pending_total=pending_total,
+                           favorite_products=[dict(row) for row in product_rows],
                            invoices=invoices_for_customer)
 
 
