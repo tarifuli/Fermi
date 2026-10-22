@@ -543,6 +543,37 @@ def customer_profile():
                            saved=request.args.get('saved') == '1')
 
 
+@app.route('/api/customers/lookup')
+@login_required
+def customer_lookup():
+    business_id = current_business_id()
+    if business_id is None:
+        return jsonify({'customers': []}), 403
+    with get_db() as db:
+        rows = db.execute('''
+            SELECT LOWER(TRIM(customer_name)) AS customer_key,
+                   MIN(customer_name) AS historical_name,
+                   MAX(customer_email) AS historical_email,
+                   MAX(customer_phone) AS historical_phone
+            FROM invoices
+            WHERE business_id=? AND TRIM(customer_name)!=''
+            GROUP BY LOWER(TRIM(customer_name))
+            ORDER BY MIN(customer_name)
+        ''', (business_id,)).fetchall()
+        profiles = db.execute('SELECT customer_key,display_name,email,phone FROM customer_profiles WHERE business_id=?',
+                              (business_id,)).fetchall()
+    result = {}
+    for row in rows:
+        key = row['customer_key']
+        result[key] = {'key': key, 'name': row['historical_name'],
+                       'email': row['historical_email'] or '', 'phone': row['historical_phone'] or ''}
+    for row in profiles:
+        key = row['customer_key']
+        result[key] = {'key': key, 'name': row['display_name'],
+                       'email': row['email'], 'phone': row['phone']}
+    return jsonify({'customers': sorted(result.values(), key=lambda item: item['name'].lower())})
+
+
 @app.route('/customers/history')
 @login_required
 def customer_history():
@@ -632,7 +663,31 @@ def create_invoice():
                or (it.get('product_id') is not None and type(it['product_id']) is not int) for it in items):
             return jsonify({'success': False, 'error': 'Invalid item or quantity'}), 400
         from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+        selected_key = d.get('customer_key')
+        if selected_key is not None and (not isinstance(selected_key, str) or not selected_key.strip() or len(selected_key) > 200):
+            return jsonify({'success': False, 'error': 'Invalid customer selection'}), 400
         with get_db() as db:
+            if selected_key is not None:
+                key = selected_key.strip().lower()
+                profile = db.execute('SELECT display_name,email,phone FROM customer_profiles WHERE business_id=? AND customer_key=?',
+                                     (business_id, key)).fetchone()
+                if profile is not None:
+                    customer_name, customer_email, customer_phone = profile['display_name'], profile['email'], profile['phone']
+                else:
+                    historical = db.execute('''SELECT customer_name,customer_email,customer_phone FROM invoices
+                        WHERE business_id=? AND LOWER(TRIM(customer_name))=?
+                        ORDER BY created_at DESC,id DESC LIMIT 1''', (business_id, key)).fetchone()
+                    if historical is None:
+                        return jsonify({'success': False, 'error': 'Selected customer was not found'}), 400
+                    customer_name, customer_email, customer_phone = historical['customer_name'], historical['customer_email'], historical['customer_phone']
+            else:
+                customer_name = d['customer_name'].strip()
+                customer_email = d.get('customer_email', '')
+                customer_phone = d.get('customer_phone', '')
+            if not isinstance(customer_name, str) or not customer_name.strip() or len(customer_name) > 200:
+                return jsonify({'success': False, 'error': 'Invalid customer name'}), 400
+            if not isinstance(customer_email, str) or len(customer_email) > 254 or not isinstance(customer_phone, str) or len(customer_phone) > 40:
+                return jsonify({'success': False, 'error': 'Invalid customer contact information'}), 400
             line_items = []
             subtotal = Decimal('0.00')
             for item in items:
@@ -669,8 +724,8 @@ def create_invoice():
                 return jsonify({'success': False, 'error': 'Invalid invoice status'}), 400
             invoice_number = next_invoice_number(business_id)
             db.execute('INSERT INTO invoices (invoice_number, customer_name, customer_email, customer_phone, subtotal, tax, total, status, notes, business_id) VALUES (?,?,?,?,?,?,?,?,?,?)',
-                       (invoice_number, d['customer_name'].strip(), d.get('customer_email',''),
-                        d.get('customer_phone',''), float(subtotal), float(tax), float(total),
+                       (invoice_number, customer_name, customer_email,
+                        customer_phone, float(subtotal), float(tax), float(total),
                         status, d.get('notes',''), business_id))
             inv_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
             for product_id, name, quantity, price, line_total in line_items:
