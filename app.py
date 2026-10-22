@@ -96,6 +96,18 @@ def init_db():
                 FOREIGN KEY (product_id) REFERENCES products(id)
             );
         ''')
+        db.execute('''CREATE TABLE IF NOT EXISTS customer_profiles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            business_id INTEGER NOT NULL REFERENCES businesses(id),
+            customer_key TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            email TEXT NOT NULL DEFAULT '',
+            phone TEXT NOT NULL DEFAULT '',
+            notes TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (business_id, customer_key)
+        )''')
         for table in ('products', 'invoices'):
             columns = {row['name'] for row in db.execute(f'PRAGMA table_info({table})')}
             if 'business_id' not in columns:
@@ -481,6 +493,54 @@ def customers():
     paid_customers = sum(1 for row in directory if row['paid_total'] > 0)
     return render_template('customers.html', customers=directory,
                            returning_customers=returning, paid_customers=paid_customers)
+
+
+@app.route('/customers/profile', methods=['GET', 'POST'])
+@login_required
+def customer_profile():
+    business_id = current_business_id()
+    if business_id is None:
+        return redirect(url_for('business_setup'))
+    key = request.values.get('name', '').strip().lower()
+    if not key or len(key) > 200:
+        return redirect(url_for('customers'))
+    with get_db() as db:
+        historical = db.execute('''
+            SELECT customer_name, customer_email, customer_phone
+            FROM invoices WHERE business_id=? AND LOWER(TRIM(customer_name))=?
+            ORDER BY created_at DESC, id DESC LIMIT 1
+        ''', (business_id, key)).fetchone()
+        profile = db.execute('SELECT * FROM customer_profiles WHERE business_id=? AND customer_key=?',
+                             (business_id, key)).fetchone()
+        if historical is None and profile is None:
+            return redirect(url_for('customers'))
+        if request.method == 'POST':
+            display_name = request.form.get('display_name', '').strip()
+            email = request.form.get('email', '').strip()
+            phone = request.form.get('phone', '').strip()
+            notes = request.form.get('notes', '').strip()
+            if not (1 <= len(display_name) <= 200 and len(email) <= 254 and len(phone) <= 40 and len(notes) <= 2000):
+                return 'Invalid customer profile fields', 400
+            if email and ('@' not in email or email.startswith('@') or email.endswith('@')):
+                return 'Enter a valid email address', 400
+            if profile:
+                db.execute('''UPDATE customer_profiles SET display_name=?,email=?,phone=?,notes=?,
+                              updated_at=CURRENT_TIMESTAMP WHERE id=? AND business_id=?''',
+                           (display_name, email, phone, notes, profile['id'], business_id))
+            else:
+                db.execute('''INSERT INTO customer_profiles
+                              (business_id,customer_key,display_name,email,phone,notes)
+                              VALUES (?,?,?,?,?,?)''',
+                           (business_id, key, display_name, email, phone, notes))
+            return redirect(url_for('customer_profile', name=key, saved='1'))
+    values = dict(profile) if profile else {
+        'display_name': historical['customer_name'],
+        'email': historical['customer_email'] or '',
+        'phone': historical['customer_phone'] or '',
+        'notes': ''
+    }
+    return render_template('customer_profile.html', profile=values, customer_key=key,
+                           saved=request.args.get('saved') == '1')
 
 
 @app.route('/customers/history')
