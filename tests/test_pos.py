@@ -162,6 +162,39 @@ class POSTests(unittest.TestCase):
             self.assertEqual(invoice['customer_name'], 'Original Buyer')
         self.assertEqual(self.client.get('/customers/profile?name=unknown').status_code, 302)
 
+    def test_customer_lookup_and_saved_profile_checkout(self):
+        from app import get_db
+        original = self.client.post('/invoices/create', json={
+            'customer_name': 'Original Buyer', 'status': 'paid',
+            'items': [{'product_id': self.product_id, 'quantity': 1}]
+        })
+        self.assertEqual(original.status_code, 200)
+        self.client.post('/customers/profile?name=original%20buyer', data={
+            'display_name': 'VIP Buyer', 'email': 'vip@example.test',
+            'phone': '01711111111', 'notes': 'Frequent buyer'
+        })
+        lookup = self.client.get('/api/customers/lookup')
+        self.assertEqual(lookup.status_code, 200)
+        self.assertIn('VIP Buyer', str(lookup.json))
+        self.assertNotIn('Frequent buyer', str(lookup.json))
+        sale = self.client.post('/invoices/create', json={
+            'customer_key': 'original buyer', 'customer_name': 'Ignored Input',
+            'customer_email': 'spoof@example.test', 'status': 'paid',
+            'items': [{'product_id': self.product_id, 'quantity': 1}]
+        })
+        self.assertEqual(sale.status_code, 200)
+        with get_db() as db:
+            inv = db.execute('SELECT customer_name,customer_email,customer_phone FROM invoices WHERE id=?',
+                             (sale.json['invoice_id'],)).fetchone()
+            self.assertEqual(inv['customer_name'], 'VIP Buyer')
+            self.assertEqual(inv['customer_email'], 'vip@example.test')
+            self.assertEqual(inv['customer_phone'], '01711111111')
+        invalid = self.client.post('/invoices/create', json={
+            'customer_key': 'nonexistent', 'customer_name': 'Bad',
+            'items': [{'product_id': self.product_id, 'quantity': 1}]
+        })
+        self.assertEqual(invalid.status_code, 400)
+
     def test_pos_requires_login(self):
         with self.client.session_transaction() as sess:
             sess.clear()
