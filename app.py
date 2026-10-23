@@ -117,6 +117,23 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE (business_id, request_key)
         )''')
+        db.execute('''CREATE TABLE IF NOT EXISTS inventory_settings (
+            business_id INTEGER PRIMARY KEY,
+            low_stock_threshold INTEGER NOT NULL DEFAULT 20 CHECK (low_stock_threshold >= 0)
+        )''')
+        db.execute('''CREATE TABLE IF NOT EXISTS stock_movements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            business_id INTEGER NOT NULL,
+            product_id INTEGER,
+            product_name TEXT NOT NULL,
+            quantity_change INTEGER NOT NULL,
+            stock_before INTEGER NOT NULL,
+            stock_after INTEGER NOT NULL,
+            reason TEXT NOT NULL,
+            source TEXT NOT NULL,
+            reference_id INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )''')
         for table in ('products', 'invoices'):
             columns = {row['name'] for row in db.execute(f'PRAGMA table_info({table})')}
             if 'business_id' not in columns:
@@ -164,7 +181,12 @@ def init_db():
                 )
                 inv_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
                 for it in item_data:
-                    db.execute('INSERT INTO invoice_items (invoice_id, product_id, product_name, quantity, unit_price, total) VALUES (?,?,?,?,?,?)',
+                        stock_after_row = db.execute('SELECT stock FROM products WHERE id=? AND business_id=?', (product_id, business_id)).fetchone()
+                    product_stock_after = stock_after_row['stock']
+                    record_stock_movement(db, business_id, product_id, name,
+                                          product_stock_after + quantity, product_stock_after,
+                                          'Invoice sale', 'pos_sale', inv_id)
+                db.execute('INSERT INTO invoice_items (invoice_id, product_id, product_name, quantity, unit_price, total) VALUES (?,?,?,?,?,?)',
                                (inv_id, it[0], it[1], it[2], it[3], it[4]))
 
 if not os.environ.get('VERCEL'):
@@ -395,12 +417,60 @@ def analytics():
                            avg_order=(paid_revenue / paid_count if paid_count else Decimal('0')))
 
 
+def record_stock_movement(db, business_id, product_id, product_name, before, after, reason, source, reference_id=None):
+    if before == after:
+        return
+    db.execute('''INSERT INTO stock_movements
+        (business_id, product_id, product_name, quantity_change, stock_before, stock_after, reason, source, reference_id)
+        VALUES (?,?,?,?,?,?,?,?,?)''',
+        (business_id, product_id, product_name, after - before, before, after, reason, source, reference_id))
+
+
 @app.route('/products')
 @login_required
 def products():
+    business_id, error = require_business()
+    if error:
+        return error
     with get_db() as db:
-        prods = db.execute('SELECT * FROM products WHERE business_id=? ORDER BY name', (current_business_id(),)).fetchall()
-    return render_template('products.html', products=[dict(p) for p in prods])
+        prods = [dict(p) for p in db.execute(
+            'SELECT * FROM products WHERE business_id=? ORDER BY name', (business_id,)).fetchall()]
+        setting = db.execute('SELECT low_stock_threshold FROM inventory_settings WHERE business_id=?',
+                             (business_id,)).fetchone()
+    threshold = setting['low_stock_threshold'] if setting else 20
+    return render_template('products.html', products=prods, threshold=threshold,
+                           low_count=sum(0 < p['stock'] <= threshold for p in prods),
+                           out_count=sum(p['stock'] == 0 for p in prods))
+
+
+@app.route('/products/threshold', methods=['POST'])
+@login_required
+def set_inventory_threshold():
+    business_id, error = require_business()
+    if error:
+        return error
+    d = request.get_json(silent=True) or {}
+    threshold = d.get('threshold')
+    if type(threshold) is not int or not 0 <= threshold <= 100000000:
+        return jsonify({'success': False, 'error': 'Threshold must be a whole number from 0 to 100,000,000'}), 400
+    with get_db() as db:
+        db.execute('''INSERT INTO inventory_settings (business_id, low_stock_threshold)
+            VALUES (?,?) ON CONFLICT (business_id) DO UPDATE SET low_stock_threshold=excluded.low_stock_threshold''',
+            (business_id, threshold))
+    return jsonify({'success': True, 'threshold': threshold})
+
+
+@app.route('/products/history')
+@login_required
+def inventory_history():
+    business_id, error = require_business()
+    if error:
+        return error
+    with get_db() as db:
+        movements = db.execute('''SELECT * FROM stock_movements WHERE business_id=?
+            ORDER BY created_at DESC, id DESC LIMIT 200''', (business_id,)).fetchall()
+    return render_template('inventory_history.html', movements=movements)
+
 
 @app.route('/products/add', methods=['POST'])
 @login_required
@@ -411,8 +481,14 @@ def add_product():
         return error
     try:
         with get_db() as db:
+            initial_stock = int(d['stock'])
+            if initial_stock < 0 or initial_stock > 100000000:
+                return jsonify({'success': False, 'error': 'Invalid starting stock'}), 400
             db.execute('INSERT INTO products (name, sku, category, price, stock, business_id) VALUES (?,?,?,?,?,?)',
-                       (d['name'], d['sku'], d['category'], float(d['price']), int(d['stock']), business_id))
+                       (d['name'], d['sku'], d['category'], float(d['price']), initial_stock, business_id))
+            product_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+            record_stock_movement(db, business_id, product_id, d['name'], 0, initial_stock,
+                                  'Initial stock', 'product_creation')
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
@@ -426,8 +502,17 @@ def edit_product(pid):
         return error
     try:
         with get_db() as db:
+            existing = db.execute('SELECT name,stock FROM products WHERE id=? AND business_id=?',
+                                  (pid, business_id)).fetchone()
+            if existing is None:
+                return jsonify({'success': False, 'error': 'Product not found'}), 404
+            new_stock = int(d['stock'])
+            if new_stock < 0 or new_stock > 100000000:
+                return jsonify({'success': False, 'error': 'Invalid stock'}), 400
             db.execute('UPDATE products SET name=?, sku=?, category=?, price=?, stock=? WHERE id=? AND business_id=?',
-                       (d['name'], d['sku'], d['category'], float(d['price']), int(d['stock']), pid, business_id))
+                       (d['name'], d['sku'], d['category'], float(d['price']), new_stock, pid, business_id))
+            record_stock_movement(db, business_id, pid, d['name'], existing['stock'], new_stock,
+                                  'Stock changed in product editor', 'product_edit')
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
@@ -449,6 +534,10 @@ def adjust_product_stock(pid):
             raise ValueError()
     except (ValueError, TypeError):
         return jsonify({'success': False, 'error': 'Enter a non-zero whole-number adjustment.'}), 400
+    reason = data.get('reason', '')
+    if not isinstance(reason, str) or len(reason.strip()) > 500:
+        return jsonify({'success': False, 'error': 'Invalid adjustment reason'}), 400
+    reason = reason.strip() or ('Restock' if delta > 0 else 'Manual stock reduction')
     with get_db() as db:
         result = db.execute(
             'UPDATE products SET stock=stock+? WHERE id=? AND business_id=? AND stock+?>=0',
@@ -456,7 +545,9 @@ def adjust_product_stock(pid):
         )
         if result.rowcount != 1:
             return jsonify({'success': False, 'error': 'Product unavailable or insufficient stock.'}), 400
-        row = db.execute('SELECT stock FROM products WHERE id=? AND business_id=?', (pid, business_id)).fetchone()
+        row = db.execute('SELECT name,stock FROM products WHERE id=? AND business_id=?', (pid, business_id)).fetchone()
+        record_stock_movement(db, business_id, pid, row['name'], row['stock'] - delta,
+                              row['stock'], reason, 'manual_adjustment')
     return jsonify({'success': True, 'stock': row['stock']})
 
 
