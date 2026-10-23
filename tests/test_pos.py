@@ -61,6 +61,34 @@ class POSTests(unittest.TestCase):
             })
             self.assertEqual(response.status_code, 400)
 
+    def test_idempotent_checkout_returns_original_invoice(self):
+        from app import get_db
+        payload = {'idempotency_key': 'checkout_test_key_0001',
+                   'customer_name': 'Repeat Safe', 'status': 'paid',
+                   'items': [{'product_id': self.product_id, 'quantity': 2}]}
+        first = self.client.post('/invoices/create', json=payload)
+        second = self.client.post('/invoices/create', json=payload)
+        self.assertEqual(first.status_code, 200, first.get_data(as_text=True))
+        self.assertEqual(second.status_code, 200, second.get_data(as_text=True))
+        self.assertEqual(first.json['invoice_id'], second.json['invoice_id'])
+        self.assertTrue(second.json['replayed'])
+        with get_db() as db:
+            self.assertEqual(db.execute('SELECT stock FROM products WHERE id=?',
+                                        (self.product_id,)).fetchone()[0], 1)
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM invoices WHERE business_id=?',
+                                        (self.business_id,)).fetchone()[0], 1)
+        changed = dict(payload)
+        changed['customer_name'] = 'Different Buyer'
+        conflict = self.client.post('/invoices/create', json=changed)
+        self.assertEqual(conflict.status_code, 409)
+
+    def test_invalid_idempotency_key_is_rejected(self):
+        response = self.client.post('/invoices/create', json={
+            'idempotency_key': 'short', 'customer_name': 'Invalid Key',
+            'items': [{'product_id': self.product_id, 'quantity': 1}]
+        })
+        self.assertEqual(response.status_code, 400)
+
     def test_pos_page_and_checkout_updates_stock(self):
         from app import get_db
         page = self.client.get('/pos')
