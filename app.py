@@ -659,9 +659,19 @@ def create_invoice():
         items = d.get('items')
         if not isinstance(items, list) or not items or not isinstance(d.get('customer_name'), str) or not d['customer_name'].strip():
             return jsonify({'success': False, 'error': 'Customer and items are required'}), 400
-        if any(not isinstance(it, dict) or type(it.get('quantity')) is not int or it['quantity'] <= 0
-               or (it.get('product_id') is not None and type(it['product_id']) is not int) for it in items):
+        if len(items) > 100:
+            return jsonify({'success': False, 'error': 'Maximum 100 invoice lines'}), 400
+        if any(not isinstance(it, dict) or type(it.get('quantity')) is not int
+               or not 1 <= it['quantity'] <= 100000
+               or (it.get('product_id') is not None and
+                   (type(it['product_id']) is not int or it['product_id'] <= 0))
+               for it in items):
             return jsonify({'success': False, 'error': 'Invalid item or quantity'}), 400
+        requested_stock = {}
+        for item in items:
+            pid = item.get('product_id')
+            if pid is not None:
+                requested_stock[pid] = requested_stock.get(pid, 0) + item['quantity']
         from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
         selected_key = d.get('customer_key')
         if selected_key is not None and (not isinstance(selected_key, str) or not selected_key.strip() or len(selected_key) > 200):
@@ -695,7 +705,7 @@ def create_invoice():
                 if product_id is not None:
                     product = db.execute('SELECT id, name, price, stock FROM products WHERE id=? AND business_id=?',
                                          (product_id, business_id)).fetchone()
-                    if product is None or product['stock'] < item['quantity']:
+                    if product is None or product['stock'] < requested_stock[product_id]:
                         return jsonify({'success': False, 'error': 'Product unavailable or insufficient stock'}), 400
                     name = product['name']
                     price = Decimal(str(product['price']))
@@ -722,11 +732,16 @@ def create_invoice():
             status = d.get('status', 'paid')
             if status not in ('paid', 'pending'):
                 return jsonify({'success': False, 'error': 'Invalid invoice status'}), 400
+            notes = d.get('notes', '')
+            if not isinstance(notes, str) or len(notes) > 5000:
+                return jsonify({'success': False, 'error': 'Invalid invoice notes'}), 400
+            if subtotal > Decimal('100000000000'):
+                return jsonify({'success': False, 'error': 'Invoice total exceeds limit'}), 400
             invoice_number = next_invoice_number(business_id)
             db.execute('INSERT INTO invoices (invoice_number, customer_name, customer_email, customer_phone, subtotal, tax, total, status, notes, business_id) VALUES (?,?,?,?,?,?,?,?,?,?)',
                        (invoice_number, customer_name, customer_email,
                         customer_phone, float(subtotal), float(tax), float(total),
-                        status, d.get('notes',''), business_id))
+                        status, notes, business_id))
             inv_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
             for product_id, name, quantity, price, line_total in line_items:
                 if product_id is not None:
