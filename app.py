@@ -108,6 +108,15 @@ def init_db():
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE (business_id, customer_key)
         )''')
+        db.execute('''CREATE TABLE IF NOT EXISTS checkout_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            business_id INTEGER NOT NULL,
+            request_key TEXT NOT NULL,
+            payload_hash TEXT NOT NULL,
+            invoice_id INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (business_id, request_key)
+        )''')
         for table in ('products', 'invoices'):
             columns = {row['name'] for row in db.execute(f'PRAGMA table_info({table})')}
             if 'business_id' not in columns:
@@ -673,10 +682,37 @@ def create_invoice():
             if pid is not None:
                 requested_stock[pid] = requested_stock.get(pid, 0) + item['quantity']
         from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+        import hashlib
+        import json
+        import re
+        request_key = d.get('idempotency_key')
+        if request_key is not None and (
+            not isinstance(request_key, str) or
+            not re.fullmatch(r'[A-Za-z0-9_-]{16,100}', request_key)
+        ):
+            return jsonify({'success': False, 'error': 'Invalid checkout request key'}), 400
+        payload_hash = hashlib.sha256(json.dumps(
+            {k: v for k, v in d.items() if k != 'idempotency_key'},
+            sort_keys=True, separators=(',', ':'), ensure_ascii=False
+        ).encode('utf-8')).hexdigest()
         selected_key = d.get('customer_key')
         if selected_key is not None and (not isinstance(selected_key, str) or not selected_key.strip() or len(selected_key) > 200):
             return jsonify({'success': False, 'error': 'Invalid customer selection'}), 400
         with get_db() as db:
+            if request_key:
+                claimed = db.execute('''INSERT INTO checkout_requests
+                    (business_id, request_key, payload_hash) VALUES (?,?,?)
+                    ON CONFLICT (business_id, request_key) DO NOTHING''',
+                    (business_id, request_key, payload_hash))
+                if claimed.rowcount == 0:
+                    previous = db.execute('''SELECT payload_hash, invoice_id
+                        FROM checkout_requests WHERE business_id=? AND request_key=?''',
+                        (business_id, request_key)).fetchone()
+                    if previous['payload_hash'] != payload_hash:
+                        return jsonify({'success': False, 'error': 'Checkout key already used for another sale'}), 409
+                    if previous['invoice_id'] is None:
+                        return jsonify({'success': False, 'error': 'Checkout is still processing; retry shortly'}), 409
+                    return jsonify({'success': True, 'invoice_id': previous['invoice_id'], 'replayed': True})
             if selected_key is not None:
                 key = selected_key.strip().lower()
                 profile = db.execute('SELECT display_name,email,phone FROM customer_profiles WHERE business_id=? AND customer_key=?',
@@ -751,6 +787,9 @@ def create_invoice():
                         raise ValueError('Product unavailable or insufficient stock')
                 db.execute('INSERT INTO invoice_items (invoice_id, product_id, product_name, quantity, unit_price, total) VALUES (?,?,?,?,?,?)',
                            (inv_id, product_id, name, quantity, float(price), float(line_total)))
+            if request_key:
+                db.execute('''UPDATE checkout_requests SET invoice_id=?
+                    WHERE business_id=? AND request_key=?''', (inv_id, business_id, request_key))
         return jsonify({'success': True, 'invoice_id': inv_id})
     except (ValueError, TypeError, KeyError) as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
