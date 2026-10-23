@@ -31,4 +31,5 @@ jobs:
       - run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/postgresql/001_initial_schema.sql
       - run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/postgresql/002_expenses.sql
       - run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/postgresql/003_customer_profiles.sql
+      - run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/postgresql/004_checkout_idempotency.sql
       - run: python -m unittest discover -s tests -p 'test_postgres_integration.py' -v
