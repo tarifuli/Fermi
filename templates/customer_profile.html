@@ -18,11 +18,11 @@
 </style>{% endblock %}
 {% block content %}
 <div class="profile-shell">
-<a href="{{ url_for('customer_history', name=customer_key) }}" style="color:var(--blue);font-size:13px;text-decoration:none">← Back to purchase history</a>
-<div class="profile-hero" style="margin-top:16px"><div style="font-size:12px;letter-spacing:1px">CUSTOMER RELATIONSHIP</div><h1 id="profileLiveName">{{ profile.display_name }}</h1><p>Keep your customer's contact details and relationship notes organized without changing previous invoices.</p></div>
-{% if saved %}<div class="alert alert-success" role="status">Customer profile saved successfully.</div>{% endif %}
+<a href="{{ url_for('customers') }}" style="color:var(--blue);font-size:13px;text-decoration:none">← All customers</a>
+<div class="profile-hero" style="margin-top:16px"><div style="font-size:12px;letter-spacing:1px">CUSTOMER RELATIONSHIP</div><h1 id="profileLiveName">{{ profile.display_name or 'New customer' }}</h1><p>Keep your customer's contact details and relationship notes organized without changing previous invoices.</p></div>
+{% if saved %}<div class="alert alert-success" role="status">Customer profile saved successfully.</div>{% endif %}{% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
 <div class="profile-card"><h2 style="color:var(--navy);font-size:20px;margin-bottom:20px">Customer details</h2>
-<form method="post" action="{{ url_for('customer_profile', name=customer_key) }}">
+<form method="post" action="{% if create_mode %}{{ url_for('new_customer') }}{% else %}{{ url_for('customer_profile', name=customer_key) }}{% endif %}">
 <div class="profile-grid">
 <div class="profile-field full"><label for="display_name">Display name</label><input id="display_name" name="display_name" required maxlength="200" value="{{ profile.display_name }}" autocomplete="organization"></div>
 <div class="profile-field"><label for="email">Email address</label><input id="email" name="email" type="email" maxlength="254" value="{{ profile.email }}"></div>
@@ -30,7 +30,7 @@
 <div class="profile-field full"><label for="notes">Relationship notes</label><textarea id="notes" name="notes" rows="5" maxlength="2000" placeholder="Preferences, follow-up reminders, delivery instructions…">{{ profile.notes }}</textarea><div style="text-align:right;color:var(--muted);font-size:12px;margin-top:5px" id="noteCount">0 / 2000</div></div>
 </div>
 <p class="profile-note">This profile is private to your business. Updating it does not rewrite historical invoices, invoice totals, or PDF receipts. Customers are currently matched to invoice history by the original invoice name.</p>
-<div class="profile-actions"><button class="btn btn-primary" type="submit">Save customer profile</button><a class="btn btn-ghost" href="{{ url_for('customer_history', name=customer_key) }}">View purchase history</a></div>
+<div class="profile-actions"><button class="btn btn-primary" type="submit">{% if create_mode %}Create customer{% else %}Save customer profile{% endif %}</button>{% if not create_mode %}<a class="btn btn-ghost" href="{{ url_for('customer_history', name=customer_key) }}">View purchase history</a>{% endif %}</div>
 </form></div></div>
 {% endblock %}
 {% block scripts %}<script>
