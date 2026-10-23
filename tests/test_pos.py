@@ -89,6 +89,28 @@ class POSTests(unittest.TestCase):
         })
         self.assertEqual(response.status_code, 400)
 
+    def test_inventory_threshold_and_movement_history(self):
+        from app import get_db
+        saved = self.client.post('/products/threshold', json={'threshold': 2})
+        self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
+        self.assertIn(b'Low stock (1', self.client.get('/products').data)
+        self.assertEqual(self.client.post('/products/threshold', json={'threshold': -1}).status_code, 400)
+        adjusted = self.client.post('/products/adjust/{}'.format(self.product_id),
+                                    json={'delta': 2, 'reason': 'New shipment'})
+        self.assertEqual(adjusted.status_code, 200)
+        sale = self.client.post('/invoices/create', json={
+            'customer_name': 'Inventory Audit',
+            'items': [{'product_id': self.product_id, 'quantity': 1}]})
+        self.assertEqual(sale.status_code, 200, sale.get_data(as_text=True))
+        history = self.client.get('/products/history')
+        self.assertEqual(history.status_code, 200)
+        self.assertIn(b'New shipment', history.data)
+        self.assertIn(b'Invoice sale', history.data)
+        with get_db() as db:
+            rows = db.execute('SELECT quantity_change FROM stock_movements WHERE business_id=? ORDER BY id',
+                              (self.business_id,)).fetchall()
+            self.assertEqual([row[0] for row in rows], [2, -1])
+
     def test_pos_page_and_checkout_updates_stock(self):
         from app import get_db
         page = self.client.get('/pos')
