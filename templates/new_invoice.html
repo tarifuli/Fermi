@@ -131,6 +131,7 @@
 const products = JSON.parse(document.getElementById('products-data').textContent);
 let itemCount = 0;
 let invoiceSaving = false;
+let invoiceRequestKey = crypto.randomUUID().replaceAll('-', '');
 const savedCustomers = new Map();
 fetch('/api/customers/lookup').then(r=>{if(!r.ok)throw Error('Customer lookup unavailable');return r.json()}).then(data=>{
   data.customers.forEach(customer=>{
@@ -279,6 +280,7 @@ async function saveInvoice() {
   const tax      = subtotal * 0.05;
 
   const payload = {
+    idempotency_key: invoiceRequestKey,
     invoice_number: document.getElementById('inv-number').value,
     customer_name:  custName,
     customer_key: document.getElementById('cust-select').value || null,
