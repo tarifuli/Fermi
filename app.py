@@ -181,12 +181,7 @@ def init_db():
                 )
                 inv_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
                 for it in item_data:
-                        stock_after_row = db.execute('SELECT stock FROM products WHERE id=? AND business_id=?', (product_id, business_id)).fetchone()
-                    product_stock_after = stock_after_row['stock']
-                    record_stock_movement(db, business_id, product_id, name,
-                                          product_stock_after + quantity, product_stock_after,
-                                          'Invoice sale', 'pos_sale', inv_id)
-                db.execute('INSERT INTO invoice_items (invoice_id, product_id, product_name, quantity, unit_price, total) VALUES (?,?,?,?,?,?)',
+                    db.execute('INSERT INTO invoice_items (invoice_id, product_id, product_name, quantity, unit_price, total) VALUES (?,?,?,?,?,?)',
                                (inv_id, it[0], it[1], it[2], it[3], it[4]))
 
 if not os.environ.get('VERCEL'):
