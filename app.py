@@ -871,6 +871,10 @@ def create_invoice():
                                          (quantity, product_id, business_id, quantity))
                     if updated.rowcount != 1:
                         raise ValueError('Product unavailable or insufficient stock')
+                    after = db.execute('SELECT stock FROM products WHERE id=? AND business_id=?',
+                                       (product_id, business_id)).fetchone()['stock']
+                    record_stock_movement(db, business_id, product_id, name,
+                                          after + quantity, after, 'Invoice sale', 'pos_sale', inv_id)
                 db.execute('INSERT INTO invoice_items (invoice_id, product_id, product_name, quantity, unit_price, total) VALUES (?,?,?,?,?,?)',
                            (inv_id, product_id, name, quantity, float(price), float(line_total)))
             if request_key:
