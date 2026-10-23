@@ -130,6 +130,7 @@
 <script>
 const products = JSON.parse(document.getElementById('products-data').textContent);
 let itemCount = 0;
+let invoiceSaving = false;
 const savedCustomers = new Map();
 fetch('/api/customers/lookup').then(r=>{if(!r.ok)throw Error('Customer lookup unavailable');return r.json()}).then(data=>{
   data.customers.forEach(customer=>{
@@ -242,6 +243,7 @@ function removeRow(id) {
 }
 
 async function saveInvoice() {
+  if (invoiceSaving) return;
   const custName = document.getElementById('cust-name').value.trim();
   if (!custName) return showAlert('Customer name is required.', 'error');
 
@@ -287,12 +289,19 @@ async function saveInvoice() {
     subtotal, tax, total: subtotal + tax, items
   };
 
-  const res = await fetch('/invoices/create', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
-  const r   = await res.json();
-  if (r.success) {
-    showAlert('Invoice saved successfully!');
-    setTimeout(() => window.location = `/invoices/${r.invoice_id}`, 800);
-  } else showAlert(r.error, 'error');
+  invoiceSaving = true;
+  const saveButtons = [...document.querySelectorAll('button[onclick="saveInvoice()"]')];
+  saveButtons.forEach(button => { button.disabled = true; button.dataset.originalText = button.textContent; button.textContent = 'Saving…'; });
+  try {
+    const res = await fetch('/invoices/create', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+    const r = await res.json();
+    if (!res.ok || !r.success) throw new Error(r.error || 'Unable to save invoice');
+    window.location.assign('/invoices/' + r.invoice_id);
+  } catch (error) {
+    showAlert(error.message || 'Unable to save invoice. Please try again.', 'error');
+    invoiceSaving = false;
+    saveButtons.forEach(button => { button.disabled = false; button.textContent = button.dataset.originalText; });
+  }
 }
 
 // Start with one row
