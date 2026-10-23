@@ -195,6 +195,36 @@ class POSTests(unittest.TestCase):
         })
         self.assertEqual(invalid.status_code, 400)
 
+    def test_create_customer_before_first_invoice_and_prevent_duplicates(self):
+        created = self.client.post('/customers/new', data={
+            'display_name': 'New Prospect', 'email': 'prospect@example.test',
+            'phone': '01712345678', 'notes': 'Interested in wholesale'
+        })
+        self.assertEqual(created.status_code, 302)
+        directory = self.client.get('/customers')
+        self.assertEqual(directory.status_code, 200)
+        self.assertIn(b'New Prospect', directory.data)
+        self.assertIn(b'Prospect', directory.data)
+        lookup = self.client.get('/api/customers/lookup')
+        self.assertEqual(lookup.status_code, 200)
+        self.assertIn('New Prospect', str(lookup.json))
+        duplicate = self.client.post('/customers/new', data={
+            'display_name': '  new prospect  ', 'email': '', 'phone': '', 'notes': ''
+        })
+        self.assertEqual(duplicate.status_code, 200)
+        self.assertIn(b'already exists', duplicate.data)
+        sale = self.client.post('/invoices/create', json={
+            'customer_name': 'New Prospect', 'customer_key': 'new prospect', 'status': 'paid',
+            'items': [{'product_id': self.product_id, 'quantity': 1}]
+        })
+        self.assertEqual(sale.status_code, 200)
+        self.assertIn(b'View history', self.client.get('/customers').data)
+
+    def test_new_customer_requires_login(self):
+        with self.client.session_transaction() as sess:
+            sess.clear()
+        self.assertEqual(self.client.get('/customers/new').status_code, 302)
+
     def test_pos_requires_login(self):
         with self.client.session_transaction() as sess:
             sess.clear()
