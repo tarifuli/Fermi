@@ -34,6 +34,33 @@ class POSTests(unittest.TestCase):
         self.env.stop()
         self.temp.cleanup()
 
+    def test_duplicate_product_lines_cannot_oversell(self):
+        from app import get_db
+        response = self.client.post('/invoices/create', json={
+            'customer_name': 'Duplicate Lines',
+            'items': [
+                {'product_id': self.product_id, 'quantity': 2},
+                {'product_id': self.product_id, 'quantity': 2}
+            ]
+        })
+        self.assertEqual(response.status_code, 400)
+        with get_db() as db:
+            self.assertEqual(db.execute('SELECT stock FROM products WHERE id=?',
+                                        (self.product_id,)).fetchone()[0], 3)
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM invoices WHERE business_id=?',
+                                        (self.business_id,)).fetchone()[0], 0)
+
+    def test_invoice_limits_and_notes_validation(self):
+        for items, notes in [
+            ([{'product_id': self.product_id, 'quantity': 100001}], ''),
+            ([{'product_id': self.product_id, 'quantity': 1}] * 101, ''),
+            ([{'product_id': self.product_id, 'quantity': 1}], 'a' * 5001)
+        ]:
+            response = self.client.post('/invoices/create', json={
+                'customer_name': 'Invalid Sale', 'items': items, 'notes': notes
+            })
+            self.assertEqual(response.status_code, 400)
+
     def test_pos_page_and_checkout_updates_stock(self):
         from app import get_db
         page = self.client.get('/pos')
