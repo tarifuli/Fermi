@@ -91,6 +91,7 @@ $('posCustomer').addEventListener('input',()=>{
 });
 
 let busy = false;
+let checkoutKey = crypto.randomUUID().replaceAll('-', '');
 const categories = [...new Set(products.map(p=>p.category).filter(Boolean))].sort();
 categories.forEach(c=>{const opt=document.createElement('option');opt.value=c;opt.textContent=c;$('posCategory').append(opt)});
 function available(p){return p.stock-(cart.get(p.id)||0)}
@@ -115,6 +116,7 @@ function changeQty(id,delta){
  const p=byId.get(id),qty=cart.get(id)||0,next=qty+delta;
  if(!p||next>p.stock||next<0)return;
  if(next===0)cart.delete(id);else cart.set(id,next);
+ checkoutKey = crypto.randomUUID().replaceAll('-', '');
  $('posMessage').textContent='';render();
 }
 function render(){
@@ -142,14 +144,14 @@ function render(){
  renderCatalog();
 }
 $('posSearch').addEventListener('input',renderCatalog);$('posCategory').addEventListener('change',renderCatalog);
-$('clearCart').addEventListener('click',()=>{if(!busy){cart.clear();render()}});
+$('clearCart').addEventListener('click',()=>{if(!busy){cart.clear();checkoutKey=crypto.randomUUID().replaceAll('-', '');render()}});
 $('posCheckout').addEventListener('click',async()=>{
  if(busy||!cart.size)return;
  const customer=$('posCustomer').value.trim();
  if(!customer){$('posMessage').textContent='Enter a customer name.';$('posCustomer').focus();return}
  busy=true;render();$('posCheckout').textContent='Saving sale…';
  try {
-   const payload={customer_name:customer,customer_key:$('posCustomerSelect').value||null,status:$('posPayment').value,notes:'Created from Fermi POS',items:[...cart].map(([product_id,quantity])=>({product_id,quantity}))};
+   const payload={idempotency_key:checkoutKey,customer_name:customer,customer_key:$('posCustomerSelect').value||null,status:$('posPayment').value,notes:'Created from Fermi POS',items:[...cart].map(([product_id,quantity])=>({product_id,quantity}))};
    const response=await fetch({{ url_for('create_invoice')|tojson }},{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
    const result=await response.json();
    if(!response.ok||!result.success)throw Error(result.error||'Unable to save sale');
