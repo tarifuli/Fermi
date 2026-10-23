@@ -488,66 +488,11 @@ def customers():
             GROUP BY LOWER(TRIM(customer_name))
             ORDER BY MAX(created_at) DESC
         ''', (business_id,)).fetchall()
-    with get_db() as db:
-        profiles = db.execute('''SELECT customer_key, display_name, email, phone
-                                 FROM customer_profiles WHERE business_id=?''',
-                              (business_id,)).fetchall()
     directory = [dict(row) for row in rows]
-    by_key = {row['customer_key']: row for row in directory}
-    for profile in profiles:
-        key = profile['customer_key']
-        if key in by_key:
-            by_key[key]['customer_name'] = profile['display_name']
-            by_key[key]['customer_email'] = profile['email']
-            by_key[key]['customer_phone'] = profile['phone']
-        else:
-            row = {'customer_key': key, 'customer_name': profile['display_name'],
-                   'customer_email': profile['email'], 'customer_phone': profile['phone'],
-                   'invoice_count': 0, 'paid_total': 0, 'last_invoice': None}
-            directory.append(row)
-            by_key[key] = row
     returning = sum(1 for row in directory if row['invoice_count'] > 1)
     paid_customers = sum(1 for row in directory if row['paid_total'] > 0)
     return render_template('customers.html', customers=directory,
                            returning_customers=returning, paid_customers=paid_customers)
-
-
-@app.route('/customers/new', methods=['GET', 'POST'])
-@login_required
-def new_customer():
-    business_id = current_business_id()
-    if business_id is None:
-        return redirect(url_for('business_setup'))
-    error = None
-    values = {'display_name': '', 'email': '', 'phone': '', 'notes': ''}
-    if request.method == 'POST':
-        values = {key: request.form.get(key, '').strip() for key in values}
-        name = values['display_name']
-        key = name.lower()
-        if not (1 <= len(name) <= 200 and len(values['email']) <= 254 and
-                len(values['phone']) <= 40 and len(values['notes']) <= 2000):
-            error = 'Check the customer name and field lengths.'
-        elif values['email'] and ('@' not in values['email'] or
-                                  values['email'].startswith('@') or values['email'].endswith('@')):
-            error = 'Enter a valid email address.'
-        else:
-            with get_db() as db:
-                existing_profile = db.execute(
-                    'SELECT id FROM customer_profiles WHERE business_id=? AND customer_key=?',
-                    (business_id, key)).fetchone()
-                existing_invoice = db.execute(
-                    'SELECT id FROM invoices WHERE business_id=? AND LOWER(TRIM(customer_name))=? LIMIT 1',
-                    (business_id, key)).fetchone()
-                if existing_profile or existing_invoice:
-                    error = 'A customer with this name already exists. Open their profile to update it.'
-                else:
-                    db.execute('''INSERT INTO customer_profiles
-                        (business_id, customer_key, display_name, email, phone, notes)
-                        VALUES (?,?,?,?,?,?)''',
-                        (business_id, key, name, values['email'], values['phone'], values['notes']))
-                    return redirect(url_for('customer_profile', name=key, saved='1'))
-    return render_template('customer_profile.html', profile=values, customer_key=None,
-                           saved=False, create_mode=True, error=error)
 
 
 @app.route('/customers/profile', methods=['GET', 'POST'])
