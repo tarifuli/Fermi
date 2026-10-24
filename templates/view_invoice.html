@@ -55,6 +55,7 @@
   <div class="page-title">Invoice Details</div>
   <div style="display:flex;gap:10px;">
     <a href="/invoices" class="btn btn-ghost">← Back</a>
+    {% if invoice.status == 'paid' and refunded < invoice.total %}<button type="button" class="btn btn-ghost" onclick="document.getElementById('refundModal').style.display='flex'">Record refund</button>{% endif %}
     <button type="button" id="saveInvoicePdf" class="btn btn-primary" onclick="window.print()">
       ⬇ Save as PDF
     </button>
@@ -118,10 +119,12 @@
     <table>
       <tr><td style="color:var(--muted);">Subtotal</td><td style="text-align:right;font-weight:500;">৳{{ "{:,.2f}".format(invoice.subtotal) }}</td></tr>
       <tr><td style="color:var(--muted);">Tax (5%)</td><td style="text-align:right;font-weight:500;">৳{{ "{:,.2f}".format(invoice.tax) }}</td></tr>
-      <tr class="grand"><td>Total (BDT)</td><td style="text-align:right;">৳{{ "{:,.2f}".format(invoice.total) }}</td></tr>
+      {% if refunded > 0 %}<tr><td>Refunded</td><td style="text-align:right;color:var(--red)">−৳{{ "{:,.2f}".format(refunded) }}</td></tr><tr><td>Net received</td><td style="text-align:right;font-weight:700">৳{{ "{:,.2f}".format(invoice.total - refunded) }}</td></tr>{% endif %}
+      <tr class="grand"><td>Original total (BDT)</td><td style="text-align:right;">৳{{ "{:,.2f}".format(invoice.total) }}</td></tr>
     </table>
   </div>
 
+  {% if refunds %}<div style="margin-top:18px"><strong>Refund history</strong><table><thead><tr><th>Date</th><th>Reason</th><th>Amount</th></tr></thead><tbody>{% for r in refunds %}<tr><td>{{ r.created_at }}</td><td>{{ r.reason or 'Refund' }}</td><td>−৳{{ "{:,.2f}".format(r.amount) }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
   {% if invoice.notes %}
   <div style="margin-top:20px;padding:12px;background:var(--bg);border-radius:6px;">
     <strong style="font-size:12px;color:var(--muted);">NOTES:</strong>
@@ -133,4 +136,26 @@
     Thank you for your business! — Fermi Platform, Dhaka, Bangladesh
   </div>
 </div>
+<div id="refundModal" class="modal-overlay" style="display:none"><div class="modal">
+<div class="modal-header"><span class="modal-title">Record customer refund</span><button class="modal-close" onclick="document.getElementById('refundModal').style.display='none'">×</button></div>
+<p style="margin-bottom:12px">Refund remaining: ৳{{ "{:,.2f}".format(invoice.total - refunded) }}. Record only money actually returned to the customer. This does not restock products.</p>
+<label class="form-label" for="refundAmount">Refund amount (BDT)</label><input class="form-control" id="refundAmount" type="number" min="0.01" step="0.01" max="{{ invoice.total - refunded }}">
+<label class="form-label" for="refundReason" style="margin-top:12px">Reason</label><input class="form-control" id="refundReason" maxlength="500" placeholder="Customer refund">
+<button id="refundSubmit" class="btn btn-primary" style="margin-top:16px" onclick="saveRefund()">Record refund</button>
+<div id="refundError" style="color:var(--red);margin-top:10px"></div>
+</div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function saveRefund(){
+ const amount=document.getElementById('refundAmount').value;
+ const btn=document.getElementById('refundSubmit');btn.disabled=true;
+ try{
+  const response=await fetch('/invoices/{{ invoice.id }}/refund',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount,reason:document.getElementById('refundReason').value})});
+  const data=await response.json();
+  if(!response.ok||!data.success)throw Error(data.error||'Unable to record refund');
+  location.reload();
+ }catch(e){document.getElementById('refundError').textContent=e.message;btn.disabled=false}
+}
+</script>
 {% endblock %}
