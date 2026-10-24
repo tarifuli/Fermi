@@ -134,6 +134,14 @@ def init_db():
             reference_id INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )''')
+        db.execute('''CREATE TABLE IF NOT EXISTS invoice_refunds (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            business_id INTEGER NOT NULL,
+            invoice_id INTEGER NOT NULL,
+            amount NUMERIC NOT NULL CHECK (amount > 0),
+            reason TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )''')
         for table in ('products', 'invoices'):
             columns = {row['name'] for row in db.execute(f'PRAGMA table_info({table})')}
             if 'business_id' not in columns:
@@ -745,8 +753,49 @@ def customer_history():
 @login_required
 def invoices():
     with get_db() as db:
-        invs = db.execute('SELECT * FROM invoices WHERE business_id=? ORDER BY created_at DESC', (current_business_id(),)).fetchall()
+        invs = db.execute('''SELECT i.*, COALESCE((SELECT SUM(r.amount) FROM invoice_refunds r
+            WHERE r.invoice_id=i.id AND r.business_id=i.business_id),0) AS refunded
+            FROM invoices i WHERE i.business_id=? ORDER BY i.created_at DESC''', (current_business_id(),)).fetchall()
     return render_template('invoices.html', invoices=[dict(i) for i in invs])
+
+@app.route('/invoices/<int:inv_id>/refund', methods=['POST'])
+@login_required
+def record_invoice_refund(inv_id):
+    from decimal import Decimal, InvalidOperation
+    business_id, error = require_business()
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    raw_amount = data.get('amount')
+    if isinstance(raw_amount, bool) or not isinstance(raw_amount, (str, int, float)):
+        return jsonify({'success': False, 'error': 'Enter a valid refund amount.'}), 400
+    try:
+        amount = Decimal(str(raw_amount))
+        if not amount.is_finite() or amount <= 0 or amount.as_tuple().exponent < -2 or amount > 100000000:
+            raise ValueError()
+    except (InvalidOperation, ValueError):
+        return jsonify({'success': False, 'error': 'Refund must be positive with at most two decimal places.'}), 400
+    reason = data.get('reason', '')
+    if not isinstance(reason, str) or len(reason.strip()) > 500:
+        return jsonify({'success': False, 'error': 'Invalid refund reason.'}), 400
+    with get_db() as db:
+        query = 'SELECT id,total,status FROM invoices WHERE id=? AND business_id=?'
+        if os.environ.get('DATABASE_URL'):
+            query += ' FOR UPDATE'
+        invoice = db.execute(query, (inv_id, business_id)).fetchone()
+        if invoice is None:
+            return jsonify({'success': False, 'error': 'Invoice not found.'}), 404
+        if invoice['status'] != 'paid':
+            return jsonify({'success': False, 'error': 'Only paid invoices can be refunded.'}), 400
+        prior = db.execute('SELECT COALESCE(SUM(amount),0) FROM invoice_refunds WHERE invoice_id=? AND business_id=?',
+                           (inv_id, business_id)).fetchone()[0]
+        remaining = Decimal(str(invoice['total'])) - Decimal(str(prior))
+        if amount > remaining:
+            return jsonify({'success': False, 'error': 'Refund exceeds remaining paid amount.'}), 400
+        db.execute('INSERT INTO invoice_refunds (business_id,invoice_id,amount,reason) VALUES (?,?,?,?)',
+                   (business_id, inv_id, str(amount), reason.strip()))
+    return jsonify({'success': True, 'amount': float(amount), 'remaining': float(remaining - amount)})
+
 
 @app.route('/pos')
 @login_required
@@ -921,8 +970,10 @@ def view_invoice(inv_id):
     with get_db() as db:
         inv   = db.execute('SELECT * FROM invoices WHERE id=? AND business_id=?', (inv_id, current_business_id())).fetchone()
         items = db.execute('SELECT * FROM invoice_items WHERE invoice_id=?', (inv_id,)).fetchall()
+        refunds = db.execute('SELECT * FROM invoice_refunds WHERE invoice_id=? AND business_id=? ORDER BY created_at DESC, id DESC',
+                             (inv_id, current_business_id())).fetchall()
     if not inv: return redirect(url_for('invoices'))
-    return render_template('view_invoice.html', invoice=dict(inv), items=[dict(i) for i in items])
+    return render_template('view_invoice.html', invoice=dict(inv), items=[dict(i) for i in items], refunds=[dict(r) for r in refunds], refunded=sum(Decimal(str(r['amount'])) for r in refunds))
 
 @app.route('/invoices/<int:inv_id>/pdf')
 @login_required
