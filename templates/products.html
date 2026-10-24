@@ -52,7 +52,7 @@
           <td><span class="badge {% if p.stock <= threshold or p.stock == 0 %}badge-low{% else %}badge-ok{% endif %}">{% if p.stock == 0 %}Out of Stock{% elif p.stock <= threshold %}Low Stock{% else %}In Stock{% endif %}</span></td>
           <td>
             <button class="btn btn-ghost btn-sm" onclick='openEdit({{ p | tojson }})'>Edit</button>
-            <button class="btn btn-ghost btn-sm" onclick='openAdjustment({{ p.id }}, {{ p.name|tojson }}, {{ p.stock }})'>Adjust stock</button><button class="btn btn-danger btn-sm" onclick="deleteProduct({{ p.id }}, this)">Delete</button>
+            <button class="btn btn-ghost btn-sm" onclick='openAdjustment({{ p.id }}, {{ p.name|tojson }}, {{ p.stock }})'>Adjust stock</button> <button class="btn btn-ghost btn-sm" onclick='openReturn({{ p.id }}, {{ p.name|tojson }}, {{ p.stock }})'>Return product</button><button class="btn btn-danger btn-sm" onclick="deleteProduct({{ p.id }}, this)">Delete</button>
           </td>
         </tr>
         {% else %}
@@ -63,6 +63,14 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="returnModal"><div class="modal">
+<div class="modal-header"><span class="modal-title">Return product to inventory</span><button class="modal-close" onclick="closeModal('returnModal')">×</button></div>
+<p id="returnProductLabel" style="margin-bottom:12px"></p><input type="hidden" id="returnProductId">
+<label class="form-label" for="returnQuantity">Quantity returned</label><input id="returnQuantity" class="form-control" type="number" min="1" max="100000" step="1" value="1">
+<label class="form-label" for="returnReason" style="margin-top:12px">Return reason (optional)</label><input id="returnReason" class="form-control" maxlength="500" placeholder="e.g. Customer returned unused item">
+<p style="font-size:12px;color:var(--muted);margin:12px 0">Returned quantity is added to sellable stock and recorded in stock movement history. This does not issue a refund or change the original invoice.</p>
+<button class="btn btn-primary" id="returnSubmit" onclick="saveReturn()">Add returned stock</button>
+</div></div>
 <div class="modal-overlay" id="adjustModal"><div class="modal"><div class="modal-header"><span class="modal-title">Adjust stock</span><button class="modal-close" onclick="closeModal('adjustModal')">×</button></div><p id="adjustProductLabel" style="margin-bottom:12px"></p><input type="hidden" id="adjustProductId"><label class="form-label" for="adjustDelta">Stock change (+ to restock, − to reduce)</label><input id="adjustDelta" class="form-control" type="number" step="1" min="-100000" max="100000"><label class="form-label" for="adjustReason">Reason (shown in history)</label><input id="adjustReason" class="form-control" maxlength="500" placeholder="e.g. New shipment, damaged stock"><p style="font-size:12px;color:var(--muted);margin:12px 0">Cannot reduce stock below zero.</p><button id="adjustSubmit" class="btn btn-primary" onclick="saveAdjustment()">Apply adjustment</button></div></div><!-- Add Modal -->
 <div class="modal-overlay" id="addModal">
   <div class="modal">
@@ -169,6 +177,25 @@ function filterTable() {
   const n=Number(row.dataset.stock);
   row.hidden=!(row.dataset.search.includes(q)&&(f==='all'||(f==='low'&&n>0&&n<=Number(row.dataset.threshold))||(f==='out'&&n===0)||(f==='ok'&&n>Number(row.dataset.threshold))));
  });
+}
+function openReturn(id,name,stock){
+ document.getElementById('returnProductId').value=id;
+ document.getElementById('returnProductLabel').textContent=name+' · Current stock: '+stock;
+ document.getElementById('returnQuantity').value=1;
+ document.getElementById('returnReason').value='';
+ openModal('returnModal');
+}
+async function saveReturn(){
+ const id=document.getElementById('returnProductId').value;
+ const quantity=Number(document.getElementById('returnQuantity').value);
+ if(!Number.isInteger(quantity)||quantity<1||quantity>100000)return showAlert('Enter a positive whole-number quantity.','error');
+ const btn=document.getElementById('returnSubmit');btn.disabled=true;
+ try{
+  const response=await fetch('/products/return/'+id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({quantity,reason:document.getElementById('returnReason').value})});
+  const result=await response.json();
+  if(!response.ok||!result.success)throw Error(result.error||'Return could not be recorded');
+  location.reload();
+ }catch(error){showAlert(error.message,'error');btn.disabled=false}
 }
 function openAdjustment(id,name,stock){
  document.getElementById('adjustProductId').value=id;
