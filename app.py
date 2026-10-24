@@ -10,6 +10,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 import anthropic
 import io
+from decimal import Decimal
 
 app = Flask(__name__)
 if os.environ.get('VERCEL') and not os.environ.get('SECRET_KEY'):
@@ -215,20 +216,27 @@ def get_sales_data(days=30, business_id=None):
 
 def get_dashboard_stats(business_id=None):
     with get_db() as db:
-        month_start   = datetime.now().replace(day=1).strftime('%Y-%m-%d')
-        total_revenue = db.execute("SELECT COALESCE(SUM(total),0) FROM invoices WHERE status='paid' AND business_id=?", (business_id,)).fetchone()[0]
-        month_revenue = db.execute("SELECT COALESCE(SUM(total),0) FROM invoices WHERE status='paid' AND DATE(created_at)>=? AND business_id=?", (month_start, business_id)).fetchone()[0]
-        total_invoices= db.execute("SELECT COUNT(*) FROM invoices WHERE business_id=?", (business_id,)).fetchone()[0]
-        low_stock     = db.execute("SELECT COUNT(*) FROM products WHERE stock < 20 AND business_id=?", (business_id,)).fetchone()[0]
-        total_products= db.execute("SELECT COUNT(*) FROM products WHERE business_id=?", (business_id,)).fetchone()[0]
+        month_start = datetime.now().replace(day=1).strftime('%Y-%m-%d')
+        gross = db.execute("SELECT COALESCE(SUM(total),0) FROM invoices WHERE status='paid' AND business_id=?", (business_id,)).fetchone()[0]
+        refunds = db.execute("SELECT COALESCE(SUM(r.amount),0) FROM invoice_refunds r JOIN invoices i ON i.id=r.invoice_id WHERE i.status='paid' AND r.business_id=?", (business_id,)).fetchone()[0]
+        month_gross = db.execute("SELECT COALESCE(SUM(total),0) FROM invoices WHERE status='paid' AND DATE(created_at)>=? AND business_id=?", (month_start, business_id)).fetchone()[0]
+        month_refunds = db.execute("SELECT COALESCE(SUM(r.amount),0) FROM invoice_refunds r JOIN invoices i ON i.id=r.invoice_id WHERE i.status='paid' AND DATE(r.created_at)>=? AND r.business_id=?", (month_start, business_id)).fetchone()[0]
+        total_invoices = db.execute("SELECT COUNT(*) FROM invoices WHERE business_id=?", (business_id,)).fetchone()[0]
+        threshold = db.execute('SELECT low_stock_threshold FROM inventory_settings WHERE business_id=?', (business_id,)).fetchone()
+        limit = threshold['low_stock_threshold'] if threshold else 20
+        low_stock = db.execute("SELECT COUNT(*) FROM products WHERE stock>0 AND stock<=? AND business_id=?", (limit, business_id)).fetchone()[0]
+        total_products = db.execute("SELECT COUNT(*) FROM products WHERE business_id=?", (business_id,)).fetchone()[0]
         daily = []
         for i in range(6, -1, -1):
-            d   = (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d')
-            rev = db.execute("SELECT COALESCE(SUM(total),0) FROM invoices WHERE DATE(created_at)=? AND status='paid' AND business_id=?", (d, business_id)).fetchone()[0]
-            daily.append({'date': d, 'revenue': round(rev, 2)})
-        return {'total_revenue': round(total_revenue,2), 'month_revenue': round(month_revenue,2),
+            d = (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d')
+            sales = db.execute("SELECT COALESCE(SUM(total),0) FROM invoices WHERE DATE(created_at)=? AND status='paid' AND business_id=?", (d, business_id)).fetchone()[0]
+            returned = db.execute("SELECT COALESCE(SUM(r.amount),0) FROM invoice_refunds r JOIN invoices i ON i.id=r.invoice_id WHERE DATE(r.created_at)=? AND i.status='paid' AND r.business_id=?", (d, business_id)).fetchone()[0]
+            daily.append({'date': d, 'revenue': float(Decimal(str(sales))-Decimal(str(returned)))})
+        return {'total_revenue': float(Decimal(str(gross))-Decimal(str(refunds))),
+                'month_revenue': float(Decimal(str(month_gross))-Decimal(str(month_refunds))),
                 'total_invoices': total_invoices, 'low_stock': low_stock,
                 'total_products': total_products, 'daily': daily}
+
 
 # ── AUTH ROUTES ──────────────────────────────────────────────────────────────
 @app.route('/login', methods=['GET', 'POST'])
@@ -403,6 +411,19 @@ def analytics():
         elif inv['status'] == 'pending':
             pending_amount += amount
             pending_count += 1
+    with get_db() as db:
+        refund_rows = db.execute('''SELECT r.amount,r.created_at FROM invoice_refunds r
+            JOIN invoices i ON i.id=r.invoice_id
+            WHERE r.business_id=? AND i.status='paid' AND r.created_at>=?''',
+            (business_id, first_day.isoformat())).fetchall()
+    refund_total = Decimal('0')
+    for refund in refund_rows:
+        day = str(refund['created_at'])[:10]
+        if day in daily:
+            amount = Decimal(str(refund['amount']))
+            daily[day] -= amount
+            refund_total += amount
+    paid_revenue -= refund_total
     products = {}
     for item in product_rows:
         if item['status'] != 'paid' or str(item['created_at'])[:10] not in daily:
@@ -414,7 +435,7 @@ def analytics():
     top_products = sorted(products.values(), key=lambda p: (-p['units'], p['name']))[:8]
     chart = [{'date': day, 'revenue': float(amount)} for day, amount in daily.items()]
     return render_template('analytics.html', days=days, chart=chart,
-                           paid_revenue=paid_revenue, pending_amount=pending_amount,
+                           paid_revenue=paid_revenue, refund_total=refund_total, pending_amount=pending_amount,
                            paid_count=paid_count, pending_count=pending_count,
                            unique_customers=len(customers), top_products=top_products,
                            avg_order=(paid_revenue / paid_count if paid_count else Decimal('0')))
