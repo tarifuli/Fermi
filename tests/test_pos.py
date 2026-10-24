@@ -111,6 +111,35 @@ class POSTests(unittest.TestCase):
                               (self.business_id,)).fetchall()
             self.assertEqual([row[0] for row in rows], [2, -1])
 
+    def test_returned_product_increases_stock_and_records_history(self):
+        from app import get_db
+        page = self.client.get('/products')
+        self.assertIn(b'Return product', page.data)
+        response = self.client.post('/products/return/{}'.format(self.product_id),
+                                    json={'quantity': 1, 'reason': 'Customer returned unused item'})
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.json['stock'], 4)
+        with get_db() as db:
+            row = db.execute('''SELECT quantity_change, stock_before, stock_after, source, reason
+                FROM stock_movements WHERE business_id=? AND product_id=? ORDER BY id DESC LIMIT 1''',
+                (self.business_id, self.product_id)).fetchone()
+            self.assertEqual((row['quantity_change'], row['stock_before'], row['stock_after']), (1, 3, 4))
+            self.assertEqual(row['source'], 'customer_return')
+            self.assertIn('Customer returned', row['reason'])
+        self.assertIn(b'Customer returned unused item', self.client.get('/products/history').data)
+
+    def test_return_validation_and_business_isolation(self):
+        from app import get_db
+        for quantity in (0, -1, 1.5, True, '2', 100001):
+            result = self.client.post('/products/return/{}'.format(self.product_id),
+                                      json={'quantity': quantity})
+            self.assertEqual(result.status_code, 400, str(quantity))
+        self.assertEqual(self.client.post('/products/return/999999',
+                                         json={'quantity': 1}).status_code, 400)
+        with get_db() as db:
+            self.assertEqual(db.execute('SELECT stock FROM products WHERE id=?',
+                                        (self.product_id,)).fetchone()[0], 3)
+
     def test_pos_page_and_checkout_updates_stock(self):
         from app import get_db
         page = self.client.get('/pos')
