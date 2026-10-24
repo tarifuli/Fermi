@@ -18,7 +18,7 @@
           <th>Invoice #</th>
           <th>Customer</th>
           <th>Date</th>
-          <th>Amount (BDT)</th>
+          <th>Original (BDT)</th><th>Refunded</th><th>Net (BDT)</th>
           <th>Status</th>
           <th>Actions</th>
         </tr>
@@ -29,15 +29,15 @@
           <td style="font-weight:600;font-family:monospace;color:var(--blue);">{{ inv.invoice_number }}</td>
           <td style="font-weight:500;">{{ inv.customer_name }}</td>
           <td style="color:var(--muted);font-size:12px;">{{ inv.created_at|string|truncate(10, True, '') }}</td>
-          <td style="font-weight:600;color:var(--teal);">৳{{ "{:,.2f}".format(inv.total) }}</td>
+          <td>৳{{ "{:,.2f}".format(inv.total) }}</td><td style="color:var(--red)">৳{{ "{:,.2f}".format(inv.refunded) }}</td><td style="font-weight:600;color:var(--teal)">৳{{ "{:,.2f}".format(inv.total - inv.refunded) }}</td>
           <td><span class="badge badge-{{ inv.status }}">{{ inv.status|capitalize }}</span></td>
           <td style="display:flex;gap:6px;">
             <a href="/invoices/{{ inv.id }}" class="btn btn-ghost btn-sm">View</a>
-            <a href="/invoices/{{ inv.id }}/pdf" class="btn btn-primary btn-sm">PDF</a>
+            <a href="/invoices/{{ inv.id }}" class="btn btn-primary btn-sm">Save PDF</a>
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="6" class="empty-state">No invoices yet. <a href="/invoices/new">Create your first!</a></td></tr>
+        <tr><td colspan="8" class="empty-state">No invoices yet. <a href="/invoices/new">Create your first!</a></td></tr>
         {% endfor %}
       </tbody>
     </table>
