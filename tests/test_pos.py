@@ -140,6 +140,29 @@ class POSTests(unittest.TestCase):
             self.assertEqual(db.execute('SELECT stock FROM products WHERE id=?',
                                         (self.product_id,)).fetchone()[0], 3)
 
+    def test_refund_reduces_dashboard_analytics_and_invoice_net(self):
+        from app import get_db
+        response = self.client.post('/invoices/create', json={
+            'customer_name': 'Refund Test',
+            'items': [{'product_id': self.product_id, 'quantity': 1}]})
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        invoice_id = response.json['invoice_id']
+        with get_db() as db:
+            total = db.execute('SELECT total FROM invoices WHERE id=?', (invoice_id,)).fetchone()[0]
+        amount = '1.00'
+        response = self.client.post('/invoices/{}/refund'.format(invoice_id),
+                                    json={'amount': amount, 'reason': 'Returned item'})
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(self.client.post('/invoices/{}/refund'.format(invoice_id),
+                                          json={'amount': str(total)}).status_code, 400)
+        self.assertIn(b'Returned item', self.client.get('/invoices/{}'.format(invoice_id)).data)
+        self.assertIn(b'Refunded', self.client.get('/invoices').data)
+        analytics = self.client.get('/analytics?days=7')
+        self.assertEqual(analytics.status_code, 200)
+        self.assertIn(b'Refunds in period', analytics.data)
+        from app import get_dashboard_stats
+        self.assertAlmostEqual(get_dashboard_stats(self.business_id)['total_revenue'], float(total)-1)
+
     def test_pos_page_and_checkout_updates_stock(self):
         from app import get_db
         page = self.client.get('/pos')
