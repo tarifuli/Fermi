@@ -994,7 +994,9 @@ def view_invoice(inv_id):
         refunds = db.execute('SELECT * FROM invoice_refunds WHERE invoice_id=? AND business_id=? ORDER BY created_at DESC, id DESC',
                              (inv_id, current_business_id())).fetchall()
     if not inv: return redirect(url_for('invoices'))
-    return render_template('view_invoice.html', invoice=dict(inv), items=[dict(i) for i in items], refunds=[dict(r) for r in refunds], refunded=float(sum(Decimal(str(r['amount'])) for r in refunds)))
+    invoice_data = dict(inv)
+    invoice_data['total'] = float(invoice_data['total'])
+    return render_template('view_invoice.html', invoice=invoice_data, items=[dict(i) for i in items], refunds=[dict(r) for r in refunds], refunded=float(sum(Decimal(str(r['amount'])) for r in refunds)))
 
 @app.route('/invoices/<int:inv_id>/pdf')
 @login_required
