@@ -546,6 +546,34 @@ def adjust_product_stock(pid):
     return jsonify({'success': True, 'stock': row['stock']})
 
 
+@app.route('/products/return/<int:pid>', methods=['POST'])
+@login_required
+def return_product_stock(pid):
+    """Receive a returned item back into sellable inventory atomically."""
+    business_id, error = require_business()
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    quantity = data.get('quantity')
+    if type(quantity) is not int or not 1 <= quantity <= 100000:
+        return jsonify({'success': False, 'error': 'Return quantity must be a positive whole number (max 100,000).'}), 400
+    reason = data.get('reason', '')
+    if not isinstance(reason, str) or len(reason.strip()) > 500:
+        return jsonify({'success': False, 'error': 'Invalid return reason.'}), 400
+    reason = reason.strip() or 'Customer return — restocked'
+    with get_db() as db:
+        updated = db.execute('''UPDATE products SET stock=stock+?
+            WHERE id=? AND business_id=? AND stock+?<=100000000''',
+            (quantity, pid, business_id, quantity))
+        if updated.rowcount != 1:
+            return jsonify({'success': False, 'error': 'Product unavailable or return exceeds stock limit.'}), 400
+        product = db.execute('SELECT name,stock FROM products WHERE id=? AND business_id=?',
+                             (pid, business_id)).fetchone()
+        record_stock_movement(db, business_id, pid, product['name'],
+                              product['stock'] - quantity, product['stock'], reason, 'customer_return')
+    return jsonify({'success': True, 'stock': product['stock']})
+
+
 @app.route('/products/delete/<int:pid>', methods=['POST'])
 @login_required
 def delete_product(pid):
