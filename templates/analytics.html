@@ -26,7 +26,8 @@
 <div class="analytics-head"><div><h1>Understand your sales</h1><p>Track paid revenue, outstanding invoices, and your best-selling products.</p></div>
 <nav class="periods" aria-label="Sales reporting period">{% for period in [7,30,90] %}<a href="{{ url_for('analytics', days=period) }}" class="{% if days == period %}selected{% endif %}" {% if days == period %}aria-current="page"{% endif %}>{{ period }} days</a>{% endfor %}</nav></div>
 <div class="stats-grid">
-<div class="stat-card"><div class="stat-label">Paid revenue</div><div class="stat-value">৳{{ "{:,.2f}".format(paid_revenue) }}</div><div class="stat-sub">{{ paid_count }} paid invoices</div></div>
+<div class="stat-card"><div class="stat-label">Paid revenue</div><div class="stat-value">৳{{ "{:,.2f}".format(paid_revenue) }}</div><div class="stat-sub">{{ paid_count }} paid invoices · net of refunds</div></div>
+<div class="stat-card"><div class="stat-label">Refunds in period</div><div class="stat-value">৳{{ "{:,.2f}".format(refund_total) }}</div><div class="stat-sub">Deducted from paid revenue</div></div>
 <div class="stat-card"><div class="stat-label">Pending amount</div><div class="stat-value">৳{{ "{:,.2f}".format(pending_amount) }}</div><div class="stat-sub">{{ pending_count }} pending invoices</div></div>
 <div class="stat-card"><div class="stat-label">Average paid invoice</div><div class="stat-value">৳{{ "{:,.2f}".format(avg_order) }}</div><div class="stat-sub">Paid invoices only</div></div>
 <div class="stat-card"><div class="stat-label">Paying customers</div><div class="stat-value">{{ unique_customers }}</div><div class="stat-sub">Unique invoice names</div></div>
@@ -38,7 +39,7 @@
 {% else %}<p class="empty-state">No paid sales in this period. <a href="{{ url_for('pos') }}">Make a test sale</a> to see analytics.</p>{% endfor %}
 </section>
 </div>
-<p class="analytics-note">Revenue figures include invoice tax and exclude pending invoices. Product rankings use line-item totals before tax. Customer counts are grouped by invoice name, not unique customer IDs. These are sales metrics, not profit-and-loss figures.</p>
+<p class="analytics-note">Revenue figures include invoice tax, deduct refunds on their recorded date, and exclude pending invoices. Product rankings use line-item totals before tax. Customer counts are grouped by invoice name, not unique customer IDs. These are sales metrics, not profit-and-loss figures.</p>
 {% endblock %}
 {% block scripts %}
 <script>
