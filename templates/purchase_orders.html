@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Purchase Orders — Fermi{% endblock %}
+{% block topbar_title %}Purchase Orders{% endblock %}
+{% block content %}
+<div class="page-header"><div class="page-title">Purchase Orders</div><a class="btn btn-ghost" href="/suppliers">Manage Suppliers</a></div>
+<div class="card" style="margin-bottom:20px">
+<div class="card-header"><span class="card-title">Create purchase order</span></div>
+{% if not suppliers %}<p>Add a supplier before creating an order. <a href="/suppliers">Add supplier</a></p>{% elif not products %}<p>Add inventory products before creating an order. <a href="/products">Inventory</a></p>
+{% else %}
+<form id="poForm">
+<div class="form-group"><label class="form-label">Supplier</label><select class="form-control" id="supplier" required>{% for s in suppliers %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}</select></div>
+<div id="lines"></div>
+<button type="button" class="btn btn-ghost" onclick="addLine()">+ Add product</button>
+<div class="form-group" style="margin-top:14px"><label class="form-label">Notes</label><textarea id="poNotes" class="form-control" maxlength="1000" rows="2"></textarea></div>
+<button type="submit" id="createPO" class="btn btn-primary">Create draft order</button><p id="poError" style="color:var(--red);margin-top:10px"></p>
+</form>{% endif %}
+</div>
+<div class="card"><div class="card-header"><span class="card-title">Order history</span></div><div class="table-wrap"><table>
+<thead><tr><th>PO</th><th>Supplier</th><th>Created</th><th>Status</th><th>Order value (BDT)</th><th></th></tr></thead><tbody>
+{% for p in orders %}<tr><td>#{{ p.id }}</td><td>{{ p.supplier_name }}</td><td>{{ p.created_at }}</td><td><span class="badge badge-pending">{{ p.status|replace('_',' ')|title }}</span></td><td>৳{{ "{:,.2f}".format(p.total_cost|float) }}</td><td><a class="btn btn-ghost btn-sm" href="/purchase-orders/{{ p.id }}">View / Receive</a></td></tr>
+{% else %}<tr><td colspan="6" class="empty-state">No purchase orders yet.</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endblock %}
+{% block scripts %}<script>
+const productOptions={{ products|map(attribute='id')|list|tojson }};
+const products={{ products|map(attribute='name')|list|tojson }};
+function addLine(){const d=document.createElement('div');d.className='grid-3';d.style='gap:10px;margin-bottom:10px';
+const select=document.createElement('select');select.className='form-control po-product';productOptions.forEach((id,i)=>{const o=document.createElement('option');o.value=id;o.textContent=products[i];select.appendChild(o)});
+const qty=document.createElement('input');qty.type='number';qty.min=1;qty.max=100000;qty.value=1;qty.className='form-control po-qty';qty.setAttribute('aria-label','Quantity');
+const cost=document.createElement('input');cost.type='number';cost.min=0;cost.max=100000000;cost.step='.01';cost.value=0;cost.className='form-control po-cost';cost.setAttribute('aria-label','Unit purchase price');
+d.append(select,qty,cost);document.getElementById('lines').appendChild(d)}
+if(document.getElementById('lines'))addLine();
+document.getElementById('poForm')?.addEventListener('submit',async e=>{
+ e.preventDefault();const btn=document.getElementById('createPO');btn.disabled=true;
+ const items=[...document.querySelectorAll('#lines .grid-3')].map(d=>({product_id:Number(d.querySelector('.po-product').value),quantity:Number(d.querySelector('.po-qty').value),unit_cost:d.querySelector('.po-cost').value}));
+ try{const res=await fetch('/purchase-orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({supplier_id:Number(document.getElementById('supplier').value),notes:document.getElementById('poNotes').value,items})});
+ const data=await res.json();if(!res.ok)throw Error(data.error||'Unable to create PO');location.href='/purchase-orders/'+data.order_id;
+ }catch(err){document.getElementById('poError').textContent=err.message;btn.disabled=false}
+});
+</script>{% endblock %}
