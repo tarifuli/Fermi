@@ -143,6 +143,52 @@ def init_db():
             reason TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )''')
+        db.execute('''CREATE TABLE IF NOT EXISTS suppliers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            business_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            contact_name TEXT NOT NULL DEFAULT '',
+            email TEXT NOT NULL DEFAULT '',
+            phone TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(id,business_id)
+        )''')
+        db.execute('''CREATE TABLE IF NOT EXISTS purchase_orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            business_id INTEGER NOT NULL,
+            supplier_id INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+            notes TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            ordered_at TIMESTAMP,
+            FOREIGN KEY (supplier_id,business_id) REFERENCES suppliers(id,business_id),
+            UNIQUE(id,business_id)
+        )''')
+        db.execute('''CREATE TABLE IF NOT EXISTS purchase_order_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            business_id INTEGER NOT NULL,
+            purchase_order_id INTEGER NOT NULL,
+            product_id INTEGER NOT NULL,
+            quantity_ordered INTEGER NOT NULL CHECK(quantity_ordered BETWEEN 1 AND 100000),
+            quantity_received INTEGER NOT NULL DEFAULT 0 CHECK(quantity_received BETWEEN 0 AND quantity_ordered),
+            unit_cost NUMERIC NOT NULL CHECK(unit_cost >= 0),
+            UNIQUE(purchase_order_id,product_id)
+        )''')
+        db.execute('''CREATE TABLE IF NOT EXISTS purchase_order_receipts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            business_id INTEGER NOT NULL,
+            purchase_order_id INTEGER NOT NULL,
+            request_key TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(business_id,request_key)
+        )''')
+        db.execute('''CREATE TABLE IF NOT EXISTS purchase_order_receipt_items (
+            receipt_id INTEGER NOT NULL,
+            po_item_id INTEGER NOT NULL,
+            quantity INTEGER NOT NULL CHECK(quantity>0),
+            PRIMARY KEY(receipt_id,po_item_id)
+        )''')
         for table in ('products', 'invoices'):
             columns = {row['name'] for row in db.execute(f'PRAGMA table_info({table})')}
             if 'business_id' not in columns:
@@ -1210,6 +1256,9 @@ Compare 7-day vs 30-day data when asked about trends. Respond in the same langua
         return jsonify({'reply': response.content[0].text, 'success': True})
     except Exception as e:
         return jsonify({'reply': f'Error: {str(e)}.', 'success': False})
+
+from purchase_orders import po_blueprint
+app.register_blueprint(po_blueprint)
 
 if __name__ == '__main__':
     init_db()
