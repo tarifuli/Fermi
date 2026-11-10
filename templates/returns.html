@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Returns — Fermi{% endblock %}
+{% block topbar_title %}Returns & Refunds{% endblock %}
+{% block content %}
+<div class="page-header"><div><div class="page-title">Customer Returns</div><p style="color:var(--muted);margin-top:6px">Record returns from the original invoice to keep stock and refunds accurate.</p></div><a href="/invoices" class="btn btn-primary">Find invoice</a></div>
+<div class="card"><div class="card-header"><span class="card-title">Return history</span></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Invoice</th><th>Customer</th><th>Units returned</th><th>Refund</th><th>Reason</th></tr></thead><tbody>
+{% for r in returns %}<tr><td>{{ r.created_at }}</td><td><a href="/invoices/{{ r.invoice_id }}">{{ r.invoice_number }}</a></td><td>{{ r.customer_name }}</td><td>{{ r.item_count }}</td><td>৳{{ "{:,.2f}".format(r.refund_amount|float) }}</td><td>{{ r.reason or '—' }}</td></tr>
+{% else %}<tr><td colspan="6" class="empty-state">No returns recorded. Open a paid invoice to record your first return.</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endblock %}
