@@ -56,6 +56,7 @@
   <div style="display:flex;gap:10px;">
     <a href="/invoices" class="btn btn-ghost">← Back</a>
     {% if invoice.status == 'paid' and refunded < invoice.total %}<button type="button" class="btn btn-ghost" onclick="document.getElementById('refundModal').style.display='flex'">Record refund</button>{% endif %}
+    {% if invoice.status == 'paid' and items|selectattr('returnable')|list %}<button type="button" class="btn btn-ghost" onclick="document.getElementById('returnModal').style.display='flex'">Return products</button>{% endif %}
     <button type="button" id="saveInvoicePdf" class="btn btn-primary" onclick="window.print()">
       ⬇ Save as PDF
     </button>
@@ -136,6 +137,20 @@
     Thank you for your business! — Fermi Platform, Dhaka, Bangladesh
   </div>
 </div>
+<div id="returnModal" class="modal-overlay" style="display:none"><div class="modal">
+<div class="modal-header"><span class="modal-title">Return invoice products</span><button class="modal-close" onclick="document.getElementById('returnModal').style.display='none'">×</button></div>
+<p style="margin-bottom:14px">Select returned quantities. Only mark items for restocking if they are sellable. Refunds are optional and will be recorded against this invoice.</p>
+{% for item in items if item.returnable > 0 %}
+<div class="form-group return-line" data-item-id="{{ item.id }}">
+<label class="form-label">{{ item.product_name }} — {{ item.returnable }} available to return</label>
+<div class="grid-2"><input class="form-control return-quantity" type="number" min="0" max="{{ item.returnable }}" step="1" value="0" aria-label="Return quantity for {{ item.product_name }}">
+<label style="font-size:13px;display:flex;align-items:center;gap:6px"><input type="checkbox" class="return-restock" {% if item.product_id is none %}disabled{% endif %}> Restock sellable item</label></div></div>
+{% endfor %}
+<div class="form-group"><label class="form-label">Reason</label><select id="returnReason" class="form-control"><option value="Customer preference">Customer preference</option><option value="Damaged product">Damaged product</option><option value="Defective product">Defective product</option><option value="Wrong product">Wrong product</option><option value="Other">Other</option></select></div>
+<div class="form-group"><label class="form-label">Refund amount (BDT; 0 if none)</label><input id="returnRefund" class="form-control" type="number" min="0" max="{{ invoice.total - refunded }}" step="0.01" value="0"></div>
+<button id="returnSubmit" class="btn btn-primary" onclick="saveReturn()">Confirm return</button>
+<div id="returnError" style="color:var(--red);margin-top:10px"></div>
+</div></div>
 <div id="refundModal" class="modal-overlay" style="display:none"><div class="modal">
 <div class="modal-header"><span class="modal-title">Record customer refund</span><button class="modal-close" onclick="document.getElementById('refundModal').style.display='none'">×</button></div>
 <p style="margin-bottom:12px">Refund remaining: ৳{{ "{:,.2f}".format(invoice.total - refunded) }}. Record only money actually returned to the customer. This does not restock products.</p>
@@ -147,6 +162,22 @@
 {% endblock %}
 {% block scripts %}
 <script>
+let returnRequestKey=crypto.randomUUID().replaceAll('-','');
+async function saveReturn(){
+ const btn=document.getElementById('returnSubmit');btn.disabled=true;
+ try{
+ const items=[...document.querySelectorAll('.return-line')].map(row=>({
+  invoice_item_id:Number(row.dataset.itemId),
+  quantity:Number(row.querySelector('.return-quantity').value),
+  restock:row.querySelector('.return-restock').checked
+ })).filter(item=>item.quantity>0);
+ if(!items.length||items.some(item=>!Number.isInteger(item.quantity)))throw Error('Enter a valid positive return quantity.');
+ const response=await fetch('/invoices/{{ invoice.id }}/returns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+  idempotency_key:returnRequestKey,items,reason:document.getElementById('returnReason').value,refund_amount:document.getElementById('returnRefund').value
+ })});
+ const data=await response.json();if(!response.ok||!data.success)throw Error(data.error||'Unable to record return');location.reload();
+ }catch(e){document.getElementById('returnError').textContent=e.message;btn.disabled=false}
+}
 async function saveRefund(){
  const amount=document.getElementById('refundAmount').value;
  const btn=document.getElementById('refundSubmit');btn.disabled=true;
