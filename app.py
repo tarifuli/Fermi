@@ -143,6 +143,25 @@ def init_db():
             reason TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )''')
+        db.execute('''CREATE TABLE IF NOT EXISTS sales_returns (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            business_id INTEGER NOT NULL REFERENCES businesses(id),
+            invoice_id INTEGER NOT NULL REFERENCES invoices(id),
+            request_key TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            reason TEXT NOT NULL DEFAULT '',
+            refund_amount NUMERIC NOT NULL DEFAULT 0 CHECK(refund_amount>=0),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(business_id,request_key)
+        )''')
+        db.execute('''CREATE TABLE IF NOT EXISTS sales_return_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            return_id INTEGER NOT NULL REFERENCES sales_returns(id),
+            invoice_item_id INTEGER NOT NULL REFERENCES invoice_items(id),
+            quantity INTEGER NOT NULL CHECK(quantity>0),
+            restock INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(return_id,invoice_item_id)
+        )''')
         db.execute('''CREATE TABLE IF NOT EXISTS suppliers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             business_id INTEGER NOT NULL,
@@ -1042,7 +1061,16 @@ def view_invoice(inv_id):
     if not inv: return redirect(url_for('invoices'))
     invoice_data = dict(inv)
     invoice_data['total'] = float(invoice_data['total'])
-    return render_template('view_invoice.html', invoice=invoice_data, items=[dict(i) for i in items], refunds=[dict(r) for r in refunds], refunded=float(sum(Decimal(str(r['amount'])) for r in refunds)))
+    with get_db() as db:
+        return_rows = db.execute("""SELECT ri.invoice_item_id,COALESCE(SUM(ri.quantity),0) AS returned
+            FROM sales_return_items ri JOIN sales_returns r ON r.id=ri.return_id
+            WHERE r.invoice_id=? AND r.business_id=? GROUP BY ri.invoice_item_id""",
+            (inv_id,current_business_id())).fetchall()
+    returned_by_item = {r['invoice_item_id']:r['returned'] for r in return_rows}
+    invoice_items = [dict(i) for i in items]
+    for item in invoice_items:
+        item['returnable'] = max(0,item['quantity']-int(returned_by_item.get(item['id'],0)))
+    return render_template('view_invoice.html', invoice=invoice_data, items=invoice_items, refunds=[dict(r) for r in refunds], refunded=float(sum(Decimal(str(r['amount'])) for r in refunds)))
 
 @app.route('/invoices/<int:inv_id>/pdf')
 @login_required
@@ -1267,3 +1295,7 @@ if __name__ == '__main__':
     print("    Open: http://localhost:5000")
     print("="*50 + "\n")
     app.run(debug=True, port=5000)
+
+# Customer returns blueprint (Build 09)
+from sales_returns import returns_blueprint
+app.register_blueprint(returns_blueprint)
