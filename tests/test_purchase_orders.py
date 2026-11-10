@@ -102,5 +102,39 @@ class PurchasingTests(unittest.TestCase):
         self.assertEqual(self.client.get('/purchase-orders/%d'%oid).status_code,200)
 
 
+    def test_supplier_edit_is_scoped_and_preserves_order_history(self):
+        from app import get_db
+        oid = self.create_order()
+        with get_db() as db:
+            sid = db.execute('SELECT supplier_id FROM purchase_orders WHERE id=?', (oid,)).fetchone()[0]
+            db.execute('INSERT INTO businesses (name) VALUES (?)', ('Second Business',))
+            other = db.execute('SELECT id FROM businesses WHERE name=?', ('Second Business',)).fetchone()[0]
+            db.execute('INSERT INTO suppliers (business_id,name) VALUES (?,?)', (other, 'Other Supplier'))
+            other_sid = db.execute('SELECT id FROM suppliers WHERE business_id=?', (other,)).fetchone()[0]
+        payload = {'name':'Updated Wholesale','contact_name':'Manager','email':'hello@example.test','phone':'123'}
+        self.assertEqual(self.client.patch('/suppliers/%d'%other_sid, json=payload).status_code,404)
+        response = self.client.patch('/suppliers/%d'%sid, json=payload)
+        self.assertEqual(response.status_code,200,response.get_data(as_text=True))
+        self.assertIn(b'Updated Wholesale',self.client.get('/suppliers').data)
+        self.assertIn(b'Updated Wholesale',self.client.get('/purchase-orders/%d'%oid).data)
+        self.assertEqual(self.client.patch('/suppliers/%d'%sid,json={**payload,'name':''}).status_code,400)
+
+    def test_receipt_stock_limit_is_atomic(self):
+        from app import get_db
+        oid=self.create_order()
+        item=self.get_line(oid)
+        self.client.post('/purchase-orders/%d/order'%oid)
+        with get_db() as db:
+            db.execute('UPDATE products SET stock=? WHERE id=?', (100000000,self.product))
+        response=self.client.post('/purchase-orders/%d/receive'%oid,json={
+            'idempotency_key':'receipt-stock-limit-00001',
+            'items':[{'po_item_id':item,'quantity':1}]})
+        self.assertEqual(response.status_code,409,response.get_data(as_text=True))
+        with get_db() as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM purchase_order_receipts WHERE purchase_order_id=?',(oid,)).fetchone()[0],0)
+            self.assertEqual(db.execute('SELECT quantity_received FROM purchase_order_items WHERE id=?',(item,)).fetchone()[0],0)
+            self.assertEqual(db.execute('SELECT stock FROM products WHERE id=?',(self.product,)).fetchone()[0],100000000)
+
+
 if __name__=='__main__':
     unittest.main()
