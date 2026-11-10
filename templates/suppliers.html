@@ -11,13 +11,40 @@
 <div class="form-group"><label class="form-label">Email</label><input class="form-control" name="email" type="email" maxlength="200"></div>
 <div class="form-group"><label class="form-label">Phone</label><input class="form-control" name="phone" maxlength="50"></div>
 </div><button class="btn btn-primary" type="submit">Save supplier</button></form></div>
+<div class="card" id="editPanel" style="display:none;margin-bottom:20px"><div class="card-header"><span class="card-title">Edit supplier</span></div>
+<form id="editSupplierForm"><div class="grid-2">
+<div class="form-group"><label class="form-label">Supplier name *</label><input class="form-control" name="name" required maxlength="150"></div>
+<div class="form-group"><label class="form-label">Contact person</label><input class="form-control" name="contact_name" maxlength="150"></div>
+<div class="form-group"><label class="form-label">Email</label><input class="form-control" name="email" type="email" maxlength="200"></div>
+<div class="form-group"><label class="form-label">Phone</label><input class="form-control" name="phone" maxlength="50"></div></div>
+<button class="btn btn-primary" type="submit">Save changes</button>
+<button class="btn btn-ghost" type="button" onclick="document.getElementById('editPanel').style.display='none'">Cancel</button>
+<p id="editError" style="color:var(--red);margin-top:10px"></p></form></div>
 <div class="card"><div class="card-header"><span class="card-title">Supplier directory</span></div><div class="table-wrap"><table>
-<thead><tr><th>Supplier</th><th>Contact</th><th>Email</th><th>Phone</th><th>Purchase orders</th></tr></thead><tbody>
-{% for s in suppliers %}<tr><td>{{ s.name }}</td><td>{{ s.contact_name or '—' }}</td><td>{{ s.email or '—' }}</td><td>{{ s.phone or '—' }}</td><td>{{ s.po_count }}</td></tr>
-{% else %}<tr><td colspan="5" class="empty-state">Add your first supplier to start purchasing.</td></tr>{% endfor %}
+<thead><tr><th>Supplier</th><th>Contact</th><th>Email</th><th>Phone</th><th>Purchase orders</th><th>Actions</th></tr></thead><tbody>
+{% for s in suppliers %}<tr><td>{{ s.name }}</td><td>{{ s.contact_name or '—' }}</td><td>{{ s.email or '—' }}</td><td>{{ s.phone or '—' }}</td><td>{{ s.po_count }}</td><td><button type="button" class="btn btn-ghost btn-sm" onclick="editSupplier(this)" data-id="{{ s.id }}" data-name="{{ s.name|e }}" data-contact="{{ s.contact_name|e }}" data-email="{{ s.email|e }}" data-phone="{{ s.phone|e }}">Edit</button></td></tr>
+{% else %}<tr><td colspan="6" class="empty-state">Add your first supplier to start purchasing.</td></tr>{% endfor %}
 </tbody></table></div></div>
 {% endblock %}
 {% block scripts %}<script>
+let editingSupplierId=null;
+function editSupplier(button){
+ editingSupplierId=Number(button.dataset.id);
+ const form=document.getElementById('editSupplierForm');
+ for(const [name, value] of Object.entries({name:button.dataset.name,contact_name:button.dataset.contact,email:button.dataset.email,phone:button.dataset.phone})){
+   form.elements[name].value=value;
+ }
+ document.getElementById('editError').textContent='';
+ document.getElementById('editPanel').style.display='block';
+ document.getElementById('editPanel').scrollIntoView({behavior:'smooth'});
+}
+document.getElementById('editSupplierForm').addEventListener('submit',async e=>{
+ e.preventDefault();const form=e.currentTarget;const button=form.querySelector('button[type=submit]');button.disabled=true;
+ try{
+ const res=await fetch('/suppliers/'+editingSupplierId,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(new FormData(form).entries()))});
+ const data=await res.json();if(!res.ok)throw Error(data.error||'Unable to update supplier');location.reload();
+ }catch(err){document.getElementById('editError').textContent=err.message;button.disabled=false}
+});
 document.getElementById('supplierForm').addEventListener('submit',async e=>{
  e.preventDefault();const form=e.currentTarget;const button=form.querySelector('button');button.disabled=true;
  try{const payload=Object.fromEntries(new FormData(form).entries());
