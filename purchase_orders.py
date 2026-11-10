@@ -267,6 +267,13 @@ def receive_order(oid):
             row = by_id.get(item_id)
             if row is None or row['quantity_received'] + qty > row['quantity_ordered']:
                 return bad('Receipt exceeds outstanding quantity or item does not belong to order.',409)
+        # Check every stock limit before writing any receipt rows.
+        for item_id, qty in canonical:
+            row = by_id[item_id]
+            stock = db.execute('SELECT stock FROM products WHERE id=? AND business_id=?',
+                               (row['product_id'], bid)).fetchone()
+            if stock is None or stock['stock'] + qty > 100000000:
+                return bad('Stock limit reached; receipt not recorded.', 409)
         receipt = db.execute('''INSERT INTO purchase_order_receipts
             (business_id,purchase_order_id,request_key,request_hash) VALUES (?,?,?,?)
             RETURNING id''',(bid,oid,key,digest)).fetchone()
@@ -277,7 +284,7 @@ def receive_order(oid):
                 WHERE id=? AND business_id=? AND stock+?<=100000000''',
                 (qty,row['product_id'],bid,qty))
             if updated.rowcount != 1:
-                return bad('Stock limit reached; receipt not recorded.', 409)
+                raise RuntimeError('Concurrent inventory update prevented the receipt.')
             after = db.execute('SELECT stock FROM products WHERE id=? AND business_id=?',
                                (row['product_id'],bid)).fetchone()['stock']
             db.execute('''UPDATE purchase_order_items SET quantity_received=quantity_received+?
