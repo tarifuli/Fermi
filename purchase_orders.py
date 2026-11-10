@@ -102,6 +102,34 @@ def create_supplier():
     return jsonify({'success': True, 'supplier_id': result['id']}), 201
 
 
+
+@po_blueprint.route('/suppliers/<int:supplier_id>', methods=['PATCH'])
+@logged_in
+def update_supplier(supplier_id):
+    bid, error = business_or_error()
+    if error:
+        return error
+    d = request.get_json(silent=True)
+    if not isinstance(d, dict):
+        return bad('Invalid supplier details.')
+    try:
+        name = text_field(d, 'name', 150, True)
+        contact = text_field(d, 'contact_name', 150)
+        email = text_field(d, 'email', 200)
+        phone = text_field(d, 'phone', 50)
+    except ValueError as e:
+        return bad(str(e))
+    get_db, _, _ = dependencies()
+    with get_db() as db:
+        result = db.execute('''UPDATE suppliers
+            SET name=?,contact_name=?,email=?,phone=?
+            WHERE id=? AND business_id=?''',
+            (name, contact, email, phone, supplier_id, bid))
+        if result.rowcount != 1:
+            return bad('Supplier not found.', 404)
+    return jsonify({'success': True, 'supplier_id': supplier_id})
+
+
 @po_blueprint.route('/purchase-orders', methods=['GET'])
 @logged_in
 def orders_page():
@@ -249,7 +277,7 @@ def receive_order(oid):
                 WHERE id=? AND business_id=? AND stock+?<=100000000''',
                 (qty,row['product_id'],bid,qty))
             if updated.rowcount != 1:
-                raise ValueError('Stock limit reached; receipt not recorded.')
+                return bad('Stock limit reached; receipt not recorded.', 409)
             after = db.execute('SELECT stock FROM products WHERE id=? AND business_id=?',
                                (row['product_id'],bid)).fetchone()['stock']
             db.execute('''UPDATE purchase_order_items SET quantity_received=quantity_received+?
