@@ -72,6 +72,25 @@ class ReportExportTests(unittest.TestCase):
         self.assertEqual(self.client.get('/analytics?start='+end).status_code, 400)
         self.assertEqual(self.client.get('/analytics?start='+end+'&end='+start).status_code, 400)
 
+    def test_build13_replenishment_scoped_and_read_only(self):
+        from app import get_db
+        with get_db() as db:
+            before = db.execute('SELECT stock FROM products WHERE sku=?', ('SKU1',)).fetchone()[0]
+        response = self.client.get('/inventory/replenishment?days=30')
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload['success'])
+        self.assertEqual(payload['planning_horizon_days'], 14)
+        self.assertEqual(len(payload['recommendations']), 1)
+        item = payload['recommendations'][0]
+        self.assertEqual(item['sku'], 'SKU1')
+        self.assertEqual(item['priority'], 'low_stock')
+        self.assertEqual(item['suggested_order_quantity'], 18)
+        self.assertEqual(self.client.get('/inventory/replenishment?days=10').status_code, 400)
+        with get_db() as db:
+            after = db.execute('SELECT stock FROM products WHERE sku=?', ('SKU1',)).fetchone()[0]
+        self.assertEqual(before, after)
+
     def test_sales_refunds_export_and_invalid_dates(self):
         for kind in ('sales','refunds'):
             response = self.client.get('/reports/export?type='+kind)
