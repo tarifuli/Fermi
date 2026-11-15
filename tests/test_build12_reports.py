@@ -36,6 +36,30 @@ class ReportExportTests(unittest.TestCase):
         self.env.stop()
         self.tmp.cleanup()
 
+    def test_build17_dashboard_net_daily_and_alert_isolation(self):
+        from app import get_db
+        from datetime import date
+        today = date.today().isoformat()
+        with get_db() as db:
+            bid = db.execute('SELECT business_id FROM business_memberships WHERE user_id=?',
+                             (self.uid,)).fetchone()[0]
+            db.execute("""INSERT INTO invoices(invoice_number,customer_name,subtotal,tax,total,status,business_id,created_at)
+                          VALUES (?,?,?,?,?,?,?,?)""",
+                       ('BUILD17-A','Customer',100,5,105,'paid',bid,today+' 10:00:00'))
+            db.execute("""INSERT INTO invoices(invoice_number,customer_name,subtotal,tax,total,status,business_id,created_at)
+                          VALUES (?,?,?,?,?,?,?,?)""",
+                       ('BUILD17-B','Customer',500,25,525,'pending',bid,today+' 10:00:00'))
+            db.execute('UPDATE products SET stock=0 WHERE business_id=?',(bid,))
+        from app import get_dashboard_stats
+        stats = get_dashboard_stats(bid)
+        self.assertEqual(len(stats['daily']), 7)
+        self.assertEqual(stats['daily'][-1]['date'], today)
+        self.assertEqual(stats['daily'][-1]['revenue'], 105.0)
+        alerts = self.client.get('/notifications').get_json()['alerts']
+        self.assertEqual(next(a['count'] for a in alerts if a['kind']=='out_of_stock'),1)
+        self.assertEqual(next(a['count'] for a in alerts if a['kind']=='pending_invoices'),1)
+        self.assertNotIn('SKU2',str(alerts))
+
     def test_inventory_export_is_scoped_and_formula_safe(self):
         response = self.client.get('/reports/export?type=inventory')
         self.assertEqual(response.status_code, 200)
