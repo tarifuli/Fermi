@@ -53,14 +53,16 @@
 <aside class="pos-panel pos-cart" aria-labelledby="cartHeading">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h2 id="cartHeading">Current sale</h2><button class="btn btn-ghost btn-sm" id="clearCart" type="button">Clear</button></div>
   <div class="pos-cart-items" id="posCartItems" aria-live="polite"><p class="pos-empty">Your cart is empty. Select a product to begin.</p></div>
-  <div class="pos-summary"><div class="pos-summary-row"><span>Subtotal</span><strong id="posSubtotal">৳0.00</strong></div><div class="pos-summary-row"><span>Tax (5%)</span><strong id="posTax">৳0.00</strong></div><div class="pos-summary-row total"><span>Total</span><span id="posTotal">৳0.00</span></div></div>
+  <label class="pos-label" for="posDiscount">Discount amount (BDT)</label><input class="form-control" id="posDiscount" type="number" min="0" step="0.01" value="0">
+  <div class="pos-summary"><div class="pos-summary-row"><span>Subtotal</span><strong id="posSubtotal">৳0.00</strong></div><div class="pos-summary-row"><span>Discount</span><strong id="posDiscountShown">৳0.00</strong></div><div class="pos-summary-row"><span>Tax (5%) after discount</span><strong id="posTax">৳0.00</strong></div><div class="pos-summary-row total"><span>Total</span><span id="posTotal">৳0.00</span></div></div>
   <label class="pos-label" for="posCustomerSelect">Existing customer (optional)</label><select class="form-control" id="posCustomerSelect"><option value="">Walk-in / new customer</option></select>
   <p class="pos-info" id="posCustomerInfo" aria-live="polite">Select a saved customer to fill in their details.</p>
   <label class="pos-label" for="posCustomer">Customer name</label><input class="form-control" id="posCustomer" maxlength="200" value="Walk-in Customer" required>
+  <label class="pos-label" for="posPaymentMethod">Payment method (record only)</label><select class="form-control" id="posPaymentMethod"><option value="cash">Cash</option><option value="card">Card</option><option value="mobile_banking">Mobile banking</option><option value="bank_transfer">Bank transfer</option><option value="other">Other</option></select>
   <label class="pos-label" for="posPayment">Payment status</label><select class="form-control" id="posPayment"><option value="paid">Paid</option><option value="pending">Pay later (pending)</option></select>
   <button type="button" class="btn btn-primary pos-submit" id="posCheckout" disabled>Complete sale</button>
   <p id="posMessage" class="pos-message" role="status" aria-live="polite"></p>
-  <p class="pos-info">Stock is validated again at checkout. A successful sale creates an invoice and deducts inventory automatically. No payment gateway is connected.</p>
+  <p class="pos-info">Stock is validated again at checkout. A successful sale creates an invoice and deducts inventory automatically. Payment method is recorded for reporting only; no payment gateway is connected.</p>
 </aside>
 </div>
 {% endblock %}
@@ -138,11 +140,17 @@ function render(){
    side.append(total,controls);row.append(info,side);$('posCartItems').append(row);
  }
  if(!cart.size){const empty=document.createElement('p');empty.className='pos-empty';empty.textContent='Your cart is empty. Select a product to begin.';$('posCartItems').append(empty)}
- const taxCents=Math.round(subtotalCents*0.05);
- $('posSubtotal').textContent=money(subtotalCents/100);$('posTax').textContent=money(taxCents/100);$('posTotal').textContent=money((subtotalCents+taxCents)/100);
- $('posCheckout').disabled=busy||!cart.size;$('clearCart').disabled=busy||!cart.size;
+ const discountCents=Math.round(Number($('posDiscount').value)*100);
+ const validDiscount=Number.isFinite(discountCents)&&discountCents>=0&&discountCents<=subtotalCents;
+ const appliedDiscount=validDiscount?discountCents:0;
+ const taxCents=Math.round((subtotalCents-appliedDiscount)*0.05);
+ $('posSubtotal').textContent=money(subtotalCents/100);$('posDiscountShown').textContent='−'+money(appliedDiscount/100);$('posTax').textContent=money(taxCents/100);$('posTotal').textContent=money((subtotalCents-appliedDiscount+taxCents)/100);
+ $('posCheckout').disabled=busy||!cart.size||!validDiscount;$('clearCart').disabled=busy||!cart.size;
  renderCatalog();
 }
+$('posDiscount').addEventListener('input',()=>{checkoutKey=crypto.randomUUID().replaceAll('-', '');render()});
+$('posPaymentMethod').addEventListener('change',()=>{checkoutKey=crypto.randomUUID().replaceAll('-', '')});
+$('posPayment').addEventListener('change',()=>{checkoutKey=crypto.randomUUID().replaceAll('-', '')});
 $('posSearch').addEventListener('input',renderCatalog);$('posCategory').addEventListener('change',renderCatalog);
 $('clearCart').addEventListener('click',()=>{if(!busy){cart.clear();checkoutKey=crypto.randomUUID().replaceAll('-', '');render()}});
 $('posCheckout').addEventListener('click',async()=>{
@@ -151,7 +159,7 @@ $('posCheckout').addEventListener('click',async()=>{
  if(!customer){$('posMessage').textContent='Enter a customer name.';$('posCustomer').focus();return}
  busy=true;render();$('posCheckout').textContent='Saving sale…';
  try {
-   const payload={idempotency_key:checkoutKey,customer_name:customer,customer_key:$('posCustomerSelect').value||null,status:$('posPayment').value,notes:'Created from Fermi POS',items:[...cart].map(([product_id,quantity])=>({product_id,quantity}))};
+   const payload={idempotency_key:checkoutKey,customer_name:customer,customer_key:$('posCustomerSelect').value||null,status:$('posPayment').value,payment_method:$('posPaymentMethod').value,discount_amount:$('posDiscount').value,notes:'Created from Fermi POS',items:[...cart].map(([product_id,quantity])=>({product_id,quantity}))};
    const response=await fetch({{ url_for('create_invoice')|tojson }},{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
    const result=await response.json();
    if(!response.ok||!result.success)throw Error(result.error||'Unable to save sale');
