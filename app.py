@@ -158,6 +158,10 @@ def init_db():
                 FOREIGN KEY (product_id) REFERENCES products(id)
             );
         ''')
+        db.execute('''CREATE TABLE IF NOT EXISTS auth_login_limits (
+            key TEXT PRIMARY KEY, attempts INTEGER NOT NULL DEFAULT 0,
+            window_start TEXT NOT NULL
+        )''')
         db.execute('''CREATE TABLE IF NOT EXISTS customer_profiles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             business_id INTEGER NOT NULL REFERENCES businesses(id),
@@ -380,9 +384,17 @@ def login():
     if request.method == 'POST':
         email    = request.form.get('email', '').strip().lower()
         password = request.form.get('password', '')
+        from auth_limits import is_limited, record_failure, clear_failures
+        # Use the actual connecting peer; do not trust user-supplied forwarding headers.
+        peer = request.remote_addr or 'unknown'
         with get_db() as db:
-            user = db.execute('SELECT * FROM users WHERE email=?', (email,)).fetchone()
+            limited = is_limited(db, email, peer)
+            user = None if limited else db.execute('SELECT * FROM users WHERE email=?', (email,)).fetchone()
+        if limited:
+            return render_template('login.html', error='Too many login attempts. Please try again in 15 minutes.'), 429
         if user and verify_password(user['password'], password):
+            with get_db() as db:
+                clear_failures(db, email, peer)
             if len(user['password']) == 64 and all(c in '0123456789abcdef' for c in user['password']):
                 with get_db() as db:
                     db.execute('UPDATE users SET password=? WHERE id=?', (hash_password(password), user['id']))
@@ -393,6 +405,8 @@ def login():
             session['user_email']= user['email']
             return redirect(url_for('dashboard'))
         else:
+            with get_db() as db:
+                record_failure(db, email, peer)
             error = 'Invalid email or password. Please try again.'
     return render_template('login.html', error=error)
 
