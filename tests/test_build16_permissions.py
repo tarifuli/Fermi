@@ -60,7 +60,7 @@ class TeamPermissionTests(unittest.TestCase):
         self.as_user('staff@team.test')
         self.assertEqual(self.client.get('/business/team').status_code,200)
         self.assertEqual(self.client.post('/business/team/members',json={'email':'outside@team.test','role':'viewer'}).status_code,403)
-        self.assertEqual(self.client.post('/business/settings',json={}).status_code,400)
+        self.assertEqual(self.client.post('/business/settings',json={'name':'Changed','contact_email':'','contact_phone':'','address':'','low_stock_threshold':20}).status_code,403)
 
     def test_password_change_requires_current_password_and_signs_out(self):
         self.assertEqual(self.client.post('/account/password',json={'current_password':'wrong','new_password':'New-password-123'}).status_code,403)
