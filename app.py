@@ -346,7 +346,7 @@ def get_sales_data(days=30, business_id=None):
         items = db.execute('''
             SELECT ii.product_name, SUM(ii.quantity) as qty, SUM(ii.total) as revenue
             FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id
-            WHERE DATE(i.created_at) >= ? AND i.status != 'cancelled' AND i.business_id=?
+            WHERE DATE(i.created_at) >= ? AND i.status = 'paid' AND i.business_id=?
             GROUP BY ii.product_name ORDER BY qty DESC
         ''', (since, business_id)).fetchall()
         return [dict(r) for r in items]
