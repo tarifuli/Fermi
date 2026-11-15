@@ -17,7 +17,7 @@ if os.environ.get('VERCEL') and not os.environ.get('SECRET_KEY'):
     raise RuntimeError('SECRET_KEY must be set for production')
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax', SESSION_COOKIE_SECURE=bool(os.environ.get('VERCEL')))
-app.config.update(PERMANENT_SESSION_LIFETIME=timedelta(hours=12))
+app.config.update(PERMANENT_SESSION_LIFETIME=timedelta(hours=12), MAX_CONTENT_LENGTH=2 * 1024 * 1024)
 
 @app.after_request
 def security_response_headers(response):
@@ -26,8 +26,10 @@ def security_response_headers(response):
     response.headers.setdefault('X-Frame-Options', 'DENY')
     response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
     response.headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
-    if 'user_id' in session:
+    if 'user_id' in session or request.endpoint in ('login', 'signup'):
         response.headers['Cache-Control'] = 'private, no-store, max-age=0'
+    if os.environ.get('VERCEL') and request.is_secure:
+        response.headers.setdefault('Strict-Transport-Security', 'max-age=31536000')
     return response
 
 @app.before_request
