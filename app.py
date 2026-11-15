@@ -26,6 +26,14 @@ def security_response_headers(response):
     response.headers.setdefault('X-Frame-Options', 'DENY')
     response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
     response.headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+    if response.mimetype == 'text/html' and response.status_code == 200:
+        # Install the CSRF helper for standalone templates as well as base.html.
+        html = response.get_data(as_text=True)
+        if '<meta name="csrf-token"' not in html and '</head>' in html:
+            from markupsafe import escape
+            token = escape(session.get('_csrf_token', ''))
+            html = html.replace('</head>', '<meta name="csrf-token" content="' + str(token) + '"><script src="/static/csrf.js" defer></script></head>', 1)
+            response.set_data(html)
     if 'user_id' in session or request.endpoint in ('login', 'signup'):
         response.headers['Cache-Control'] = 'private, no-store, max-age=0'
     if os.environ.get('VERCEL') and request.is_secure:
