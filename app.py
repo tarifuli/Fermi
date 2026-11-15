@@ -614,28 +614,6 @@ def change_business_member(user_id):
     return jsonify({'success': True})
 
 
-@app.route('/business/settings', methods=['GET', 'POST'])
-@login_required
-def business_settings():
-    business_id, error = require_business()
-    if error:
-        return error
-    role = current_business_role()
-    with get_db() as db:
-        business = db.execute('SELECT name FROM businesses WHERE id=?', (business_id,)).fetchone()
-    if request.method == 'GET':
-        return render_template('business_settings.html', business=business, role=role)
-    if role != 'owner':
-        return jsonify({'success': False, 'error': 'Only owners can edit business settings.'}), 403
-    data = request.get_json(silent=True) or {}
-    name = data.get('name')
-    if not isinstance(name, str) or not 1 <= len(name.strip()) <= 120:
-        return jsonify({'success': False, 'error': 'Business name must be 1–120 characters.'}), 400
-    with get_db() as db:
-        db.execute('UPDATE businesses SET name=? WHERE id=?', (name.strip(), business_id))
-    return jsonify({'success': True})
-
-
 @app.route('/account/password', methods=['POST'])
 @login_required
 def account_password():
