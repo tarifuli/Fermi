@@ -135,6 +135,29 @@ class ReportExportTests(unittest.TestCase):
         self.assertIn('Action center', html)
         self.assertIn('Plan replenishment', html)
 
+    def test_build15_discount_and_payment_method_are_server_validated(self):
+        from app import get_db
+        with get_db() as db:
+            product = db.execute('SELECT id FROM products WHERE sku=?', ('SKU1',)).fetchone()['id']
+        payload = {'customer_name': 'Walk-in', 'items': [{'product_id': product, 'quantity': 1}],
+                   'status': 'paid', 'discount_amount': '2.00', 'payment_method': 'cash'}
+        result = self.client.post('/invoices/create', json=payload)
+        self.assertEqual(result.status_code, 200, result.get_data(as_text=True))
+        with get_db() as db:
+            inv = db.execute('SELECT subtotal,discount,tax,total,payment_method FROM invoices WHERE id=?',
+                             (result.get_json()['invoice_id'],)).fetchone()
+        self.assertEqual(float(inv['subtotal']), 10.0)
+        self.assertEqual(float(inv['discount']), 2.0)
+        self.assertEqual(float(inv['tax']), 0.4)
+        self.assertEqual(float(inv['total']), 8.4)
+        self.assertEqual(inv['payment_method'], 'cash')
+        for discount in ('-1', '11', '0.001', 'NaN'):
+            payload['discount_amount'] = discount
+            self.assertEqual(self.client.post('/invoices/create', json=payload).status_code, 400)
+        payload['discount_amount'] = '0'
+        payload['payment_method'] = 'untrusted'
+        self.assertEqual(self.client.post('/invoices/create', json=payload).status_code, 400)
+
     def test_sales_refunds_export_and_invalid_dates(self):
         for kind in ('sales','refunds'):
             response = self.client.get('/reports/export?type='+kind)
