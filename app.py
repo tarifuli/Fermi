@@ -17,6 +17,39 @@ if os.environ.get('VERCEL') and not os.environ.get('SECRET_KEY'):
     raise RuntimeError('SECRET_KEY must be set for production')
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax', SESSION_COOKIE_SECURE=bool(os.environ.get('VERCEL')))
+app.config.update(PERMANENT_SESSION_LIFETIME=timedelta(hours=12))
+
+@app.after_request
+def security_response_headers(response):
+    """Safe baseline browser headers without changing application routes."""
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    response.headers.setdefault('X-Frame-Options', 'DENY')
+    response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+    response.headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+    if 'user_id' in session:
+        response.headers['Cache-Control'] = 'private, no-store, max-age=0'
+    return response
+
+@app.before_request
+def reject_cross_site_writes():
+    """Reject explicitly cross-site unsafe requests using Fetch Metadata/Origin.
+
+    Missing headers are allowed for legacy clients; this is defense in depth,
+    not a replacement for a full CSRF-token implementation.
+    """
+    if request.method not in ('POST', 'PUT', 'PATCH', 'DELETE'):
+        return None
+    if request.headers.get('Sec-Fetch-Site') == 'cross-site':
+        return jsonify({'success': False, 'error': 'Cross-site requests are not allowed.'}), 403
+    from urllib.parse import urlsplit
+    origin = request.headers.get('Origin')
+    if origin:
+        parsed = urlsplit(origin)
+        host = request.host.lower()
+        if parsed.scheme not in ('http', 'https') or parsed.netloc.lower() != host:
+            return jsonify({'success': False, 'error': 'Invalid request origin.'}), 403
+    return None
+
 
 DATABASE = os.environ.get('DATABASE_PATH', 'fermi.db')
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', 'YOUR_API_KEY_HERE')
@@ -325,6 +358,8 @@ def login():
             if len(user['password']) == 64 and all(c in '0123456789abcdef' for c in user['password']):
                 with get_db() as db:
                     db.execute('UPDATE users SET password=? WHERE id=?', (hash_password(password), user['id']))
+            session.clear()
+            session.permanent = True
             session['user_id']   = user['id']
             session['user_name'] = user['name']
             session['user_email']= user['email']
@@ -355,6 +390,8 @@ def signup():
                     db.execute('INSERT INTO users (name, email, password) VALUES (?,?,?)',
                                (name, email, hash_password(password)))
                     user = db.execute('SELECT * FROM users WHERE email=?', (email,)).fetchone()
+                    session.clear()
+                    session.permanent = True
                     session['user_id']    = user['id']
                     session['user_name']  = user['name']
                     session['user_email'] = user['email']
