@@ -32,6 +32,22 @@ def security_response_headers(response):
         response.headers.setdefault('Strict-Transport-Security', 'max-age=31536000')
     return response
 
+@app.context_processor
+def inject_csrf_token():
+    if '_csrf_token' not in session:
+        session['_csrf_token'] = secrets.token_urlsafe(32)
+    return {'csrf_token': session['_csrf_token']}
+
+@app.before_request
+def verify_csrf_token():
+    if request.method not in ('POST', 'PUT', 'PATCH', 'DELETE'):
+        return None
+    expected = session.get('_csrf_token', '')
+    supplied = request.headers.get('X-CSRF-Token') or request.form.get('_csrf_token', '')
+    if not expected or not supplied or not secrets.compare_digest(expected, supplied):
+        return jsonify({'success': False, 'error': 'Security token expired or missing. Refresh the page and retry.'}), 403
+    return None
+
 @app.before_request
 def reject_cross_site_writes():
     """Reject explicitly cross-site unsafe requests using Fetch Metadata/Origin.
