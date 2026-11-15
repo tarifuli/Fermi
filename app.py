@@ -1297,7 +1297,10 @@ def chatbot():
 @app.route('/api/chat', methods=['POST'])
 @login_required
 def api_chat():
-    user_message = request.json.get('message', '')
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get('message'), str) or not 1 <= len(data['message'].strip()) <= 4000:
+        return jsonify({'success': False, 'error': 'Message must be between 1 and 4,000 characters.'}), 400
+    user_message = data['message'].strip()
     business_id, error = require_business()
     if error:
         return error
@@ -1332,23 +1335,20 @@ Compare 7-day vs 30-day data when asked about trends. Respond in the same langua
         response = client.messages.create(model="claude-sonnet-4-20250514", max_tokens=800,
                                           system=context, messages=[{"role":"user","content":user_message}])
         return jsonify({'reply': response.content[0].text, 'success': True})
-    except Exception as e:
-        return jsonify({'reply': f'Error: {str(e)}.', 'success': False})
+    except Exception:
+        app.logger.exception('AI assistant request failed')
+        return jsonify({'reply': 'The assistant is temporarily unavailable. Please try again.', 'success': False}), 503
 
 from purchase_orders import po_blueprint
 app.register_blueprint(po_blueprint)
 
-if __name__ == '__main__':
-    init_db()
-    print("\n" + "="*50)
-    print("🚀  Fermi is running!")
-    print("    Open: http://localhost:5000")
-    print("="*50 + "\n")
-    app.run(debug=True, port=5000)
-
-# Customer returns blueprint (Build 09)
+# Register all routes before starting the local development server.
 from sales_returns import returns_blueprint
 app.register_blueprint(returns_blueprint)
 
 from onboarding import onboarding_blueprint
 app.register_blueprint(onboarding_blueprint)
+
+if __name__ == '__main__':
+    init_db()
+    app.run(debug=os.environ.get('FERMI_DEBUG') == '1', port=int(os.environ.get('PORT', 5000)))
