@@ -32,7 +32,7 @@ class DashboardOnboardingTests(unittest.TestCase):
   page=self.client.get('/')
   self.assertEqual(page.status_code,200,page.get_data(as_text=True))
   self.assertIn(b'id="dashboardOnboarding"',page.data)
-  self.assertIn(b'Open Business Settings',page.data)
+  self.assertIn(b'id="dashboardBusinessSettings"',page.data)
   with get_db() as db:
    db.execute("INSERT INTO business_details(business_id,contact_email,contact_phone,address) VALUES (?,?,?,?)",(bid,'hello@shop.test','123','Dhaka'))
    db.execute("INSERT INTO inventory_settings(business_id,low_stock_threshold) VALUES (?,?)",(bid,5))
