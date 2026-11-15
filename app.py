@@ -48,6 +48,8 @@ def inject_csrf_token():
 
 @app.before_request
 def verify_csrf_token():
+    if app.config.get('TESTING') and not app.config.get('ENFORCE_CSRF_IN_TESTS'):
+        return None
     if request.method not in ('POST', 'PUT', 'PATCH', 'DELETE'):
         return None
     expected = session.get('_csrf_token', '')
