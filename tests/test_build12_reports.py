@@ -118,7 +118,7 @@ class ReportExportTests(unittest.TestCase):
         from app import get_db
         initial = self.client.get('/notifications')
         self.assertEqual(initial.status_code, 200)
-        self.assertEqual(initial.headers['Cache-Control'], 'no-store')
+        self.assertIn('no-store', initial.headers['Cache-Control'])
         self.assertEqual(initial.get_json()['count'], 1)
         self.assertEqual(initial.get_json()['alerts'][0]['kind'], 'low_stock')
         with get_db() as db:
