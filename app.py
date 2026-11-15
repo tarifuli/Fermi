@@ -764,6 +764,59 @@ def products():
                            out_count=sum(p['stock'] == 0 for p in prods))
 
 
+@app.route('/inventory/replenishment')
+@login_required
+def inventory_replenishment():
+    """Read-only, business-scoped replenishment suggestions (Build 13)."""
+    from datetime import date, timedelta
+    business_id, error = require_business()
+    if error:
+        return error
+    days_raw = request.args.get('days', '30')
+    if days_raw not in ('7', '30', '90'):
+        return jsonify({'success': False, 'error': 'Days must be 7, 30 or 90'}), 400
+    days = int(days_raw)
+    start = (date.today() - timedelta(days=days - 1)).isoformat()
+    with get_db() as db:
+        products = db.execute(
+            'SELECT id, name, sku, stock, price FROM products WHERE business_id=? ORDER BY name, id',
+            (business_id,)).fetchall()
+        setting = db.execute('SELECT low_stock_threshold FROM inventory_settings WHERE business_id=?',
+                             (business_id,)).fetchone()
+        sales = db.execute("""SELECT ii.product_id, SUM(ii.quantity) AS units
+            FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id
+            WHERE i.business_id=? AND i.status='paid' AND i.created_at>=?
+            AND ii.product_id IS NOT NULL
+            GROUP BY ii.product_id""", (business_id, start)).fetchall()
+    threshold = int(setting['low_stock_threshold']) if setting else 20
+    sold = {int(r['product_id']): int(r['units']) for r in sales}
+    recommendations = []
+    for p in products:
+        stock = int(p['stock'])
+        units = sold.get(int(p['id']), 0)
+        daily_rate = units / days
+        coverage = round(stock / daily_rate, 1) if daily_rate else None
+        # A minimum stock floor plus 14 days of observed demand.
+        target = max(threshold + 1, (units * 14 + days - 1) // days)
+        suggested = max(0, target - stock)
+        if suggested == 0:
+            continue
+        priority = 'out_of_stock' if stock == 0 else ('low_stock' if stock <= threshold else 'demand_risk')
+        recommendations.append({
+            'product_id': p['id'], 'name': p['name'], 'sku': p['sku'],
+            'stock': stock, 'units_sold': units, 'daily_units': round(daily_rate, 2),
+            'estimated_coverage_days': coverage, 'target_stock': target,
+            'suggested_order_quantity': suggested, 'priority': priority
+        })
+    order = {'out_of_stock': 0, 'low_stock': 1, 'demand_risk': 2}
+    recommendations.sort(key=lambda x: (order[x['priority']], -x['suggested_order_quantity'], x['name']))
+    response = jsonify({'success': True, 'days': days, 'threshold': threshold,
+                        'planning_horizon_days': 14, 'recommendations': recommendations,
+                        'note': 'Estimates use paid invoice units, not returns, lead times or seasonality. No purchase orders are created.'})
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
 @app.route('/products/threshold', methods=['POST'])
 @login_required
 def set_inventory_threshold():
