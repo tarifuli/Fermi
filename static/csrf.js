@@ -14,15 +14,17 @@
     }
     return originalFetch.call(this, input, init);
   };
-  document.addEventListener('DOMContentLoaded', function () {
-    document.querySelectorAll('form').forEach(function (form) {
+  document.addEventListener('submit', function (event) {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement)) return;
+      const action = new URL(form.action || window.location.href, window.location.href);
+      if (action.origin !== window.location.origin) return;
       const method = (form.getAttribute('method') || 'GET').toUpperCase();
-      if (method !== 'POST' || form.querySelector('input[name="_csrf_token"]')) return;
+      if (method === 'GET' || form.querySelector('input[name="_csrf_token"]')) return;
       const input = document.createElement('input');
       input.type = 'hidden';
       input.name = '_csrf_token';
       input.value = document.querySelector('meta[name="csrf-token"]').content;
       form.appendChild(input);
-    });
-  });
+  }, true);
 })();
