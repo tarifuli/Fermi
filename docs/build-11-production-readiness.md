@@ -1,6 +1,6 @@
 # Build 11 — Production readiness and release checklist
 
-Status: development hardening implemented; **not production approved**.
+Status: development hardening implemented; **not production approved**.\n\n**Required before using the latest preview login:** Apply `migrations/postgresql/010_auth_login_limits.sql` to the **development Neon database**. This migration creates shared throttling state; without it login requests can fail. Run separately on production only with explicit release approval and a tested backup.
 
 ## Verified automatically
 - Security/regression suite: GitHub Actions `Fermi security and regression tests`.
@@ -16,8 +16,8 @@ Status: development hardening implemented; **not production approved**.
 6. Obtain explicit owner approval before merging or deploying to production. Never run migrations on the production database without a separate review.
 
 ## Known residual risks
-- Cross-site write checks based on Origin/Fetch Metadata are **defense in depth**, not complete CSRF protection. Implement token-based CSRF protection across HTML forms and JSON endpoints before a public production launch.
-- Login rate limiting/account abuse protection is not yet implemented. A shared persistent store or trusted edge protection is needed; in-memory limits are unreliable on serverless deployments.
+- CSRF enforcement now requires a signed-session token on all unsafe methods. Browser templates install same-origin fetch and form token helpers. Verify dynamically generated forms and non-fetch clients before release.
+- Database-backed login rate limiting now applies to email + connecting-peer IP. Add independent edge/IP-wide limits, account monitoring, and abuse-response policies before a large public launch.
 - Flask's signed client-side sessions do not provide immediate global session revocation. For stricter account security, add server-side session tracking and password-reset/revocation controls.
 - No evidence here of completed penetration testing, disaster recovery rehearsal, or production load testing.
 
