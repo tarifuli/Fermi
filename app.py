@@ -280,6 +280,11 @@ def init_db():
             quantity INTEGER NOT NULL CHECK(quantity>0),
             PRIMARY KEY(receipt_id,po_item_id)
         )''')
+        invoice_columns = {row['name'] for row in db.execute('PRAGMA table_info(invoices)')}
+        if 'discount' not in invoice_columns:
+            db.execute('ALTER TABLE invoices ADD COLUMN discount NUMERIC NOT NULL DEFAULT 0')
+        if 'payment_method' not in invoice_columns:
+            db.execute("ALTER TABLE invoices ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'unspecified'")
         for table in ('products', 'invoices'):
             columns = {row['name'] for row in db.execute(f'PRAGMA table_info({table})')}
             if 'business_id' not in columns:
@@ -1360,8 +1365,21 @@ def create_invoice():
                 subtotal += line_total
                 line_items.append((product_id, name, item['quantity'], price, line_total))
             subtotal = subtotal.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            tax = (subtotal * Decimal('0.05')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            total = subtotal + tax
+            discount_raw = d.get('discount_amount', '0')
+            if isinstance(discount_raw, bool) or not isinstance(discount_raw, (int, float, str)):
+                return jsonify({'success': False, 'error': 'Invalid discount amount'}), 400
+            try:
+                discount = Decimal(str(discount_raw))
+            except InvalidOperation:
+                return jsonify({'success': False, 'error': 'Invalid discount amount'}), 400
+            if (not discount.is_finite() or discount < 0 or discount > subtotal
+                    or discount.as_tuple().exponent < -2):
+                return jsonify({'success': False, 'error': 'Discount must be between zero and subtotal, with at most two decimals'}), 400
+            payment_method = d.get('payment_method', 'unspecified')
+            if payment_method not in ('unspecified', 'cash', 'card', 'mobile_banking', 'bank_transfer', 'other'):
+                return jsonify({'success': False, 'error': 'Invalid payment method'}), 400
+            tax = ((subtotal - discount) * Decimal('0.05')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            total = subtotal - discount + tax
             status = d.get('status', 'paid')
             if status not in ('paid', 'pending'):
                 return jsonify({'success': False, 'error': 'Invalid invoice status'}), 400
@@ -1371,10 +1389,10 @@ def create_invoice():
             if subtotal > Decimal('100000000000'):
                 return jsonify({'success': False, 'error': 'Invoice total exceeds limit'}), 400
             invoice_number = next_invoice_number(business_id)
-            db.execute('INSERT INTO invoices (invoice_number, customer_name, customer_email, customer_phone, subtotal, tax, total, status, notes, business_id) VALUES (?,?,?,?,?,?,?,?,?,?)',
+            db.execute('INSERT INTO invoices (invoice_number, customer_name, customer_email, customer_phone, subtotal, tax, total, status, notes, business_id, discount, payment_method) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
                        (invoice_number, customer_name, customer_email,
                         customer_phone, float(subtotal), float(tax), float(total),
-                        status, notes, business_id))
+                        status, notes, business_id, float(discount), payment_method))
             inv_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
             for product_id, name, quantity, price, line_total in line_items:
                 if product_id is not None:
