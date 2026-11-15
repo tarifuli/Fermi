@@ -29,7 +29,7 @@
 <section class="card" style="margin-bottom:20px;border:1px solid var(--sky);background:#f6faff">
   <div class="card-title" style="font-size:18px;margin-bottom:8px">Welcome to Fermi — let's set up your business</div>
   <p style="font-size:13px;color:var(--muted);margin-bottom:14px">You can explore the dashboard first, or create your business profile now to start managing products and sales.</p>
-  <button type="button" class="btn btn-primary" id="openSetupDialog">Start business setup</button>
+  <button type="button" class="btn btn-primary" id="openSetupDialog">Set up my business</button>
   <a href="{{ url_for('business_setup') }}" class="btn btn-ghost">Go directly to setup</a>
 </section>
 <div id="businessSetupDialog" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="setupDialogTitle" aria-hidden="true">
@@ -41,7 +41,7 @@
 </div>
 {% else %}
 <section class="card" style="margin-bottom:20px;border:1px solid var(--sky)" aria-label="Business setup progress" id="dashboardOnboarding">
-  <div class="card-header" style="gap:10px;flex-wrap:wrap"><strong style="font-size:16px">Business setup checklist</strong><span style="font-size:13px;color:var(--muted)">{{ onboarding.completed }} of {{ onboarding.total }} completed{% if onboarding.completed == onboarding.total %} — All set!{% endif %}</span></div>
+  <div class="card-header" style="gap:10px;flex-wrap:wrap"><strong style="font-size:16px">Finish setting up your business — checklist</strong><span style="font-size:13px;color:var(--muted)">{{ onboarding.completed }} of {{ onboarding.total }} completed{% if onboarding.completed == onboarding.total %} — All set!{% endif %}</span></div>
   <div style="height:9px;background:var(--sky);border-radius:20px;overflow:hidden;margin-bottom:16px" role="progressbar" aria-label="Business setup progress" aria-valuemin="0" aria-valuemax="{{ onboarding.total }}" aria-valuenow="{{ onboarding.completed }}"><div style="height:100%;width:{{ onboarding.completed / onboarding.total * 100 if onboarding.total else 0 }}%;background:var(--teal)"></div></div>
   {% for step in onboarding.steps %}
   <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--border)">
