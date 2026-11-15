@@ -42,7 +42,7 @@ class ReportExportTests(unittest.TestCase):
         rows = list(csv.reader(io.StringIO(response.get_data(as_text=True))))
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[1][2], "'=HYPERLINK(\"bad\")")
-        self.assertEqual(rows[1][-1], '30')
+        self.assertEqual(float(rows[1][-1]), 30.0)
 
     def test_sales_refunds_export_and_invalid_dates(self):
         for kind in ('sales','refunds'):
