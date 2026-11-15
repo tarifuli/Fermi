@@ -517,6 +517,141 @@ def require_business():
     return business_id, None
 
 
+# ── BUILD 16: MEMBERSHIP PERMISSIONS ────────────────────────────────────────
+def current_business_role():
+    business_id = current_business_id()
+    if business_id is None:
+        return None
+    with get_db() as db:
+        row = db.execute('SELECT role FROM business_memberships WHERE business_id=? AND user_id=?',
+                         (business_id, session['user_id'])).fetchone()
+    return row['role'] if row else None
+
+
+@app.before_request
+def enforce_business_permissions():
+    if 'user_id' not in session:
+        return None
+    # Enforce read-only membership centrally, including existing JSON APIs.
+    if request.method in ('POST', 'PUT', 'PATCH', 'DELETE') and request.endpoint not in (
+            'login', 'signup', 'logout', 'account_password'):
+        if current_business_role() == 'viewer':
+            return jsonify({'success': False, 'error': 'Viewer access is read-only.'}), 403
+    return None
+
+
+@app.route('/business/team')
+@login_required
+def business_team():
+    business_id, error = require_business()
+    if error:
+        return error
+    role = current_business_role()
+    with get_db() as db:
+        business = db.execute('SELECT name FROM businesses WHERE id=?', (business_id,)).fetchone()
+        members = db.execute("""SELECT u.id,u.name,u.email,m.role FROM business_memberships m
+            JOIN users u ON u.id=m.user_id WHERE m.business_id=?
+            ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'staff' THEN 1 ELSE 2 END,u.name""",
+            (business_id,)).fetchall()
+    return render_template('business_team.html', business=business, members=members,
+                           role=role, current_user_id=session['user_id'])
+
+
+@app.route('/business/team/members', methods=['POST'])
+@login_required
+def add_business_member():
+    business_id, error = require_business()
+    if error:
+        return error
+    if current_business_role() != 'owner':
+        return jsonify({'success': False, 'error': 'Only owners can manage members.'}), 403
+    data = request.get_json(silent=True) or {}
+    email = data.get('email', '')
+    role = data.get('role')
+    if not isinstance(email, str) or not 3 <= len(email.strip()) <= 254 or role not in ('staff', 'viewer'):
+        return jsonify({'success': False, 'error': 'Enter a registered email and a valid role.'}), 400
+    with get_db() as db:
+        user = db.execute('SELECT id FROM users WHERE email=?', (email.strip().lower(),)).fetchone()
+        if not user:
+            return jsonify({'success': False, 'error': 'User must register before being added.'}), 404
+        existing = db.execute('SELECT role FROM business_memberships WHERE business_id=? AND user_id=?',
+                              (business_id, user['id'])).fetchone()
+        if existing:
+            return jsonify({'success': False, 'error': 'This user is already a member.'}), 409
+        db.execute('INSERT INTO business_memberships (business_id,user_id,role) VALUES (?,?,?)',
+                   (business_id, user['id'], role))
+    return jsonify({'success': True})
+
+
+@app.route('/business/team/members/<int:user_id>', methods=['PATCH', 'DELETE'])
+@login_required
+def change_business_member(user_id):
+    business_id, error = require_business()
+    if error:
+        return error
+    if current_business_role() != 'owner':
+        return jsonify({'success': False, 'error': 'Only owners can manage members.'}), 403
+    data = request.get_json(silent=True) or {}
+    new_role = data.get('role')
+    if request.method == 'PATCH' and new_role not in ('staff', 'viewer', 'owner'):
+        return jsonify({'success': False, 'error': 'Invalid role.'}), 400
+    with get_db() as db:
+        membership = db.execute('SELECT role FROM business_memberships WHERE business_id=? AND user_id=?',
+                                (business_id, user_id)).fetchone()
+        if not membership:
+            return jsonify({'success': False, 'error': 'Member not found.'}), 404
+        if membership['role'] == 'owner' and (request.method == 'DELETE' or new_role != 'owner'):
+            count = db.execute("SELECT COUNT(*) FROM business_memberships WHERE business_id=? AND role='owner'",
+                               (business_id,)).fetchone()[0]
+            if count <= 1:
+                return jsonify({'success': False, 'error': 'Cannot remove the last owner.'}), 409
+        if request.method == 'DELETE':
+            db.execute('DELETE FROM business_memberships WHERE business_id=? AND user_id=?',
+                       (business_id, user_id))
+        else:
+            db.execute('UPDATE business_memberships SET role=? WHERE business_id=? AND user_id=?',
+                       (new_role, business_id, user_id))
+    return jsonify({'success': True})
+
+
+@app.route('/business/settings', methods=['GET', 'POST'])
+@login_required
+def business_settings():
+    business_id, error = require_business()
+    if error:
+        return error
+    role = current_business_role()
+    with get_db() as db:
+        business = db.execute('SELECT name FROM businesses WHERE id=?', (business_id,)).fetchone()
+    if request.method == 'GET':
+        return render_template('business_settings.html', business=business, role=role)
+    if role != 'owner':
+        return jsonify({'success': False, 'error': 'Only owners can edit business settings.'}), 403
+    data = request.get_json(silent=True) or {}
+    name = data.get('name')
+    if not isinstance(name, str) or not 1 <= len(name.strip()) <= 120:
+        return jsonify({'success': False, 'error': 'Business name must be 1–120 characters.'}), 400
+    with get_db() as db:
+        db.execute('UPDATE businesses SET name=? WHERE id=?', (name.strip(), business_id))
+    return jsonify({'success': True})
+
+
+@app.route('/account/password', methods=['POST'])
+@login_required
+def account_password():
+    data = request.get_json(silent=True) or {}
+    old, new = data.get('current_password'), data.get('new_password')
+    if not isinstance(old, str) or not isinstance(new, str) or not 12 <= len(new) <= 256:
+        return jsonify({'success': False, 'error': 'New password must be 12–256 characters.'}), 400
+    with get_db() as db:
+        user = db.execute('SELECT password FROM users WHERE id=?', (session['user_id'],)).fetchone()
+        if not user or not verify_password(user['password'], old):
+            return jsonify({'success': False, 'error': 'Current password is incorrect.'}), 403
+        db.execute('UPDATE users SET password=? WHERE id=?', (hash_password(new), session['user_id']))
+    session.clear()
+    return jsonify({'success': True, 'message': 'Password changed. Sign in again.'})
+
+
 # ── MAIN ROUTES (protected) ──────────────────────────────────────────────────
 @app.route('/')
 @login_required
