@@ -91,6 +91,29 @@ class ReportExportTests(unittest.TestCase):
             after = db.execute('SELECT stock FROM products WHERE sku=?', ('SKU1',)).fetchone()[0]
         self.assertEqual(before, after)
 
+    def test_build13_planner_page_and_supplier_isolation(self):
+        from app import get_db
+        page = self.client.get('/inventory/replenishment/plan')
+        self.assertEqual(page.status_code, 200)
+        html = page.get_data(as_text=True)
+        self.assertIn('Stock replenishment planner', html)
+        self.assertIn('Add a supplier', html)
+        self.assertIn('No supplier is registered yet', html)
+        with get_db() as db:
+            business = db.execute('SELECT business_id FROM business_memberships WHERE user_id=?',
+                                  (self.uid,)).fetchone()['business_id']
+            other = db.execute('SELECT id FROM businesses WHERE name=?', ('Shop 2',)).fetchone()['id']
+            db.execute('INSERT INTO suppliers (business_id,name) VALUES (?,?)', (other, 'Other Supplier'))
+            db.execute('INSERT INTO suppliers (business_id,name) VALUES (?,?)', (business, 'My Supplier'))
+        page = self.client.get('/inventory/replenishment/plan')
+        self.assertEqual(page.status_code, 200)
+        html = page.get_data(as_text=True)
+        self.assertIn('My Supplier', html)
+        self.assertNotIn('Other Supplier', html)
+        self.assertIn('Create draft from selected products', html)
+        self.assertIn('/purchase-orders', html)
+        self.assertIn('Plan replenishment', self.client.get('/products').get_data(as_text=True))
+
     def test_sales_refunds_export_and_invalid_dates(self):
         for kind in ('sales','refunds'):
             response = self.client.get('/reports/export?type='+kind)
