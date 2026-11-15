@@ -590,12 +590,30 @@ def analytics():
         entry['units'] += int(item['quantity'])
         entry['revenue'] += Decimal(str(item['total']))
     top_products = sorted(products.values(), key=lambda p: (-p['units'], p['name']))[:8]
+    with get_db() as db:
+        stock_rows = db.execute('SELECT id, name, stock, price FROM products WHERE business_id=?',
+                                (business_id,)).fetchall()
+        setting = db.execute('SELECT low_stock_threshold FROM inventory_settings WHERE business_id=?',
+                             (business_id,)).fetchone()
+    threshold = int(setting['low_stock_threshold']) if setting else 20
+    inventory_value = sum((Decimal(str(p['price'])) * int(p['stock']) for p in stock_rows), Decimal('0'))
+    out_of_stock_count = sum(int(p['stock']) == 0 for p in stock_rows)
+    low_stock_count = sum(0 < int(p['stock']) <= threshold for p in stock_rows)
+    sales_units = {p['name']: p['units'] for p in products.values()}
+    slow_moving = sorted(
+        ({'name': p['name'], 'stock': int(p['stock']), 'units': sales_units.get(p['name'], 0)}
+         for p in stock_rows if int(p['stock']) > 0),
+        key=lambda p: (p['units'], -p['stock'], p['name'])
+    )[:5]
     chart = [{'date': day, 'revenue': float(amount)} for day, amount in daily.items()]
     return render_template('analytics.html', days=days, chart=chart,
                            paid_revenue=paid_revenue, refund_total=refund_total, pending_amount=pending_amount,
                            paid_count=paid_count, pending_count=pending_count,
                            unique_customers=len(customers), top_products=top_products,
-                           avg_order=(paid_revenue / paid_count if paid_count else Decimal('0')))
+                           avg_order=(paid_revenue / paid_count if paid_count else Decimal('0')),
+                           inventory_value=inventory_value, out_of_stock_count=out_of_stock_count,
+                           low_stock_count=low_stock_count, slow_moving=slow_moving,
+                           inventory_threshold=threshold)
 
 
 
