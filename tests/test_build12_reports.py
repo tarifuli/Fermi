@@ -44,6 +44,18 @@ class ReportExportTests(unittest.TestCase):
         self.assertEqual(rows[1][2], "'=HYPERLINK(\"bad\")")
         self.assertEqual(float(rows[1][-1]), 30.0)
 
+    def test_analytics_inventory_insights_and_export_links(self):
+        response = self.client.get('/analytics?days=30')
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn('Inventory intelligence', html)
+        self.assertIn('Slow-moving inventory', html)
+        self.assertIn('Download sales CSV', html)
+        self.assertIn('Download refunds CSV', html)
+        self.assertIn('Download inventory CSV', html)
+        self.assertIn('30.00', html)
+        self.assertNotIn('SKU2', html)
+
     def test_sales_refunds_export_and_invalid_dates(self):
         for kind in ('sales','refunds'):
             response = self.client.get('/reports/export?type='+kind)
