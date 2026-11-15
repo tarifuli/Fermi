@@ -21,7 +21,7 @@
   <div><div class="page-title">Good day, {{ session.get('user_name', 'there') }} 👋</div>
   <div style="font-size:13px;color:var(--muted);margin-top:2px">Here's your business overview</div></div>
   <div style="display:flex;gap:10px;flex-wrap:wrap">
-    <a href="{{ url_for('business_settings') if has_business else url_for('business_setup') }}" class="btn btn-primary" id="dashboardBusinessSettings">{{ 'Business Settings' if has_business else 'Set Up Business' }}</a>
+    <a href="{{ url_for('onboarding.business_settings') if has_business else url_for('business_setup') }}" class="btn btn-primary" id="dashboardBusinessSettings">{{ 'Business Settings' if has_business else 'Set Up Business' }}</a>
     {% if has_business %}<a href="/invoices/new" class="btn btn-ghost">New Invoice</a>{% endif %}
   </div>
 </div>
@@ -50,7 +50,7 @@
   </div>
   {% endfor %}
   <p style="font-size:12px;color:var(--muted);margin-top:12px">Checklist updates automatically when you save business settings, add products, or create an invoice. Refresh the dashboard to see the latest progress.</p>
-  <a href="{{ url_for('business_settings') }}" class="btn btn-primary" style="margin-top:12px">Open Business Settings</a>
+  <a href="{{ url_for('onboarding.business_settings') }}" class="btn btn-primary" style="margin-top:12px">Open Business Settings</a>
 </section>
 {% endif %}
 <!-- Stats -->
