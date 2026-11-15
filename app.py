@@ -370,11 +370,11 @@ def get_dashboard_stats(business_id=None):
         total_products = db.execute("SELECT COUNT(*) FROM products WHERE business_id=?", (business_id,)).fetchone()[0]
         # Aggregate once per table instead of 14 separate day-level database round trips.
         start_day = (datetime.now() - timedelta(days=6)).strftime('%Y-%m-%d')
-        sales_by_day = {r['day']: r['amount'] for r in db.execute(
+        sales_by_day = {str(r['day']): r['amount'] for r in db.execute(
             """SELECT DATE(created_at) AS day, COALESCE(SUM(total),0) AS amount
                FROM invoices WHERE business_id=? AND status='paid' AND created_at>=?
                GROUP BY DATE(created_at)""", (business_id, start_day)).fetchall()}
-        refunds_by_day = {r['day']: r['amount'] for r in db.execute(
+        refunds_by_day = {str(r['day']): r['amount'] for r in db.execute(
             """SELECT DATE(r.created_at) AS day, COALESCE(SUM(r.amount),0) AS amount
                FROM invoice_refunds r JOIN invoices i ON i.id=r.invoice_id
                WHERE r.business_id=? AND i.status='paid' AND r.created_at>=?
