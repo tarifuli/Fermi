@@ -162,6 +162,13 @@ def init_db():
             restock INTEGER NOT NULL DEFAULT 0,
             UNIQUE(return_id,invoice_item_id)
         )''')
+        db.execute('''CREATE TABLE IF NOT EXISTS business_details (
+            business_id INTEGER PRIMARY KEY REFERENCES businesses(id),
+            contact_email TEXT NOT NULL DEFAULT '',
+            contact_phone TEXT NOT NULL DEFAULT '',
+            address TEXT NOT NULL DEFAULT '',
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )''')
         db.execute('''CREATE TABLE IF NOT EXISTS suppliers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             business_id INTEGER NOT NULL,
@@ -405,7 +412,10 @@ def business_profile():
         ).fetchone()
     if not business:
         return redirect(url_for('business_setup'))
-    return render_template('business_profile.html', business=dict(business))
+    from onboarding import onboarding_status
+    with get_db() as db:
+        progress = onboarding_status(db,business['id'])
+    return render_template('business_profile.html', business=dict(business), onboarding=progress)
 
 
 def current_business_id():
@@ -428,8 +438,11 @@ def require_business():
 @login_required
 def dashboard():
     business_id = current_business_id()
+    from onboarding import onboarding_status
+    with get_db() as db:
+        onboarding = onboarding_status(db,business_id)
     return render_template('dashboard.html', stats=get_dashboard_stats(business_id),
-                           has_business=business_id is not None,
+                           onboarding=onboarding, has_business=business_id is not None,
                            sales_7=get_sales_data(7, business_id)[:5], sales_30=get_sales_data(30, business_id)[:5])
 
 @app.route('/analytics')
@@ -1299,3 +1312,6 @@ if __name__ == '__main__':
 # Customer returns blueprint (Build 09)
 from sales_returns import returns_blueprint
 app.register_blueprint(returns_blueprint)
+
+from onboarding import onboarding_blueprint
+app.register_blueprint(onboarding_blueprint)
