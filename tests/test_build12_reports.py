@@ -56,6 +56,22 @@ class ReportExportTests(unittest.TestCase):
         self.assertIn('30.00', html)
         self.assertNotIn('SKU2', html)
 
+    def test_custom_dates_and_comparison(self):
+        from datetime import date, timedelta
+        today = date.today()
+        start = (today - timedelta(days=4)).isoformat()
+        end = today.isoformat()
+        response = self.client.get('/analytics?start='+start+'&end='+end)
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn('Period comparison', html)
+        self.assertIn('name="start"', html)
+        self.assertIn('start='+start, html)
+        self.assertIn('end='+end, html)
+        self.assertEqual(self.client.get('/analytics?start=2026-02-30&end='+end).status_code, 400)
+        self.assertEqual(self.client.get('/analytics?start='+end).status_code, 400)
+        self.assertEqual(self.client.get('/analytics?start='+end+'&end='+start).status_code, 400)
+
     def test_sales_refunds_export_and_invalid_dates(self):
         for kind in ('sales','refunds'):
             response = self.client.get('/reports/export?type='+kind)
