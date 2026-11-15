@@ -539,10 +539,26 @@ def analytics():
     days = int(period)
     today = date.today()
     first_day = today - timedelta(days=days - 1)
+    last_day = today
+    custom_start = request.args.get('start', '')
+    custom_end = request.args.get('end', '')
+    if custom_start or custom_end:
+        try:
+            if not custom_start or not custom_end:
+                raise ValueError('Both dates required')
+            first_day = date.fromisoformat(custom_start)
+            last_day = date.fromisoformat(custom_end)
+            if first_day > last_day or last_day > today or (last_day - first_day).days >= 366:
+                raise ValueError('Invalid date range')
+            days = (last_day - first_day).days + 1
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Select a valid date range of up to 366 days ending today or earlier.'}), 400
+    previous_start = first_day - timedelta(days=days)
+    next_day = last_day + timedelta(days=1)
     with get_db() as db:
         invoices = db.execute(
             'SELECT id, created_at, total, status, customer_name FROM invoices WHERE business_id=? AND created_at>=? ORDER BY created_at',
-            (business_id, first_day.isoformat())
+            (business_id, previous_start.isoformat())
         ).fetchall()
         product_rows = db.execute('''
             SELECT ii.product_name, ii.quantity, ii.total, i.created_at, i.status
@@ -550,6 +566,13 @@ def analytics():
             WHERE i.business_id=? AND i.created_at>=?
         ''', (business_id, first_day.isoformat())).fetchall()
     daily = {str(first_day + timedelta(days=n)): Decimal('0') for n in range(days)}
+    previous_paid = Decimal('0')
+    previous_count = 0
+    for inv in invoices:
+        day = str(inv['created_at'])[:10]
+        if previous_start.isoformat() <= day < first_day.isoformat() and inv['status'] == 'paid':
+            previous_paid += Decimal(str(inv['total']))
+            previous_count += 1
     paid_revenue = Decimal('0')
     pending_amount = Decimal('0')
     paid_count = 0
@@ -572,15 +595,19 @@ def analytics():
         refund_rows = db.execute('''SELECT r.amount,r.created_at FROM invoice_refunds r
             JOIN invoices i ON i.id=r.invoice_id
             WHERE r.business_id=? AND i.status='paid' AND r.created_at>=?''',
-            (business_id, first_day.isoformat())).fetchall()
+            (business_id, previous_start.isoformat())).fetchall()
     refund_total = Decimal('0')
     for refund in refund_rows:
         day = str(refund['created_at'])[:10]
+        amount = Decimal(str(refund['amount']))
         if day in daily:
-            amount = Decimal(str(refund['amount']))
             daily[day] -= amount
             refund_total += amount
+        elif previous_start.isoformat() <= day < first_day.isoformat():
+            previous_paid -= amount
     paid_revenue -= refund_total
+    revenue_change = ((paid_revenue - previous_paid) / abs(previous_paid) * 100
+                      if previous_paid else None)
     products = {}
     for item in product_rows:
         if item['status'] != 'paid' or str(item['created_at'])[:10] not in daily:
@@ -613,7 +640,10 @@ def analytics():
                            avg_order=(paid_revenue / paid_count if paid_count else Decimal('0')),
                            inventory_value=inventory_value, out_of_stock_count=out_of_stock_count,
                            low_stock_count=low_stock_count, slow_moving=slow_moving,
-                           inventory_threshold=threshold)
+                           inventory_threshold=threshold, previous_paid=previous_paid,
+                           previous_count=previous_count, revenue_change=revenue_change,
+                           report_start=first_day.isoformat(), report_end=last_day.isoformat(),
+                           is_custom=bool(custom_start or custom_end))
 
 
 
