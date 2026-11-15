@@ -17,7 +17,7 @@
 .rank:last-child{border:0}.rank-num{background:var(--sky);color:var(--blue);border-radius:50%;width:26px;height:26px;display:grid;place-items:center;font-size:12px;flex-shrink:0}
 .rank-info{flex:1;min-width:0}.rank-info strong{display:block;font-size:13px;color:var(--navy);overflow-wrap:anywhere}.rank-info small{color:var(--muted);font-size:12px}
 .rank-value{font-size:13px;color:var(--teal);font-weight:700;white-space:nowrap}
-.report-actions{display:flex;flex-wrap:wrap;gap:9px;margin:12px 0 20px}.report-actions a{display:inline-flex;padding:9px 13px;border:1px solid var(--border);border-radius:8px;background:white;text-decoration:none;color:var(--navy);font-size:13px;font-weight:600}.report-actions a:hover{background:var(--sky)}.inventory-insights{margin-top:18px}.inventory-insights .stat-value{font-size:23px}.analytics-note{color:var(--muted);font-size:12px;line-height:1.6;margin-top:18px}
+.date-filter{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin:0 0 18px}.date-filter label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}.date-filter input{padding:9px;border:1px solid var(--border);border-radius:8px;max-width:170px}.date-filter button{padding:10px 15px;background:var(--navy);color:white;border:0;border-radius:8px;cursor:pointer}.report-actions{display:flex;flex-wrap:wrap;gap:9px;margin:12px 0 20px}.report-actions a{display:inline-flex;padding:9px 13px;border:1px solid var(--border);border-radius:8px;background:white;text-decoration:none;color:var(--navy);font-size:13px;font-weight:600}.report-actions a:hover{background:var(--sky)}.inventory-insights{margin-top:18px}.inventory-insights .stat-value{font-size:23px}.analytics-note{color:var(--muted);font-size:12px;line-height:1.6;margin-top:18px}
 @media(max-width:900px){.analytics-grid{grid-template-columns:1fr}}
 @media(max-width:520px){.analytics-card{padding:16px}.periods a{padding:8px 10px}}
 </style>
@@ -25,11 +25,18 @@
 {% block content %}
 <div class="analytics-head"><div><h1>Understand your sales</h1><p>Track paid revenue, outstanding invoices, and your best-selling products.</p></div>
 <nav class="periods" aria-label="Sales reporting period">{% for period in [7,30,90] %}<a href="{{ url_for('analytics', days=period) }}" class="{% if days == period %}selected{% endif %}" {% if days == period %}aria-current="page"{% endif %}>{{ period }} days</a>{% endfor %}</nav></div>
+<form class="date-filter" method="get" action="{{ url_for('analytics') }}">
+<label>From<input type="date" name="start" value="{{ report_start }}" required></label>
+<label>To<input type="date" name="end" value="{{ report_end }}" required></label>
+<button type="submit">Apply dates</button>
+</form>
 <nav class="report-actions" aria-label="Download reports">
-<a href="{{ url_for('export_business_report', type='sales') }}">Download sales CSV</a>
-<a href="{{ url_for('export_business_report', type='refunds') }}">Download refunds CSV</a>
+<a href="{{ url_for('export_business_report', type='sales', start=report_start, end=report_end) }}">Download sales CSV</a>
+<a href="{{ url_for('export_business_report', type='refunds', start=report_start, end=report_end) }}">Download refunds CSV</a>
 <a href="{{ url_for('export_business_report', type='inventory') }}">Download inventory CSV</a>
 </nav>
+<div class="analytics-card" style="margin-bottom:18px"><h2>Period comparison</h2><p style="color:var(--muted);font-size:13px">Current period: {{ report_start }} to {{ report_end }} · previous period: {{ days }} days immediately before</p>
+<p style="margin-top:10px;font-size:15px"><strong>Previous net paid revenue:</strong> ৳{{ "{:,.2f}".format(previous_paid) }} · <strong>Change:</strong> {% if revenue_change is none %}Not available (previous period had zero net revenue){% else %}{{ "{:+,.1f}".format(revenue_change) }}%{% endif %}</p></div>
 <div class="stats-grid">
 <div class="stat-card"><div class="stat-label">Paid revenue</div><div class="stat-value">৳{{ "{:,.2f}".format(paid_revenue) }}</div><div class="stat-sub">{{ paid_count }} paid invoices · net of refunds</div></div>
 <div class="stat-card"><div class="stat-label">Refunds in period</div><div class="stat-value">৳{{ "{:,.2f}".format(refund_total) }}</div><div class="stat-sub">Deducted from paid revenue</div></div>
@@ -46,7 +53,7 @@
 </div>
 </div>
 <div class="analytics-grid">
-<section class="analytics-card"><h2>Daily paid revenue</h2><p style="color:var(--muted);font-size:12px">Last {{ days }} days · BDT</p><div class="analytics-chart"><canvas id="analyticsRevenue" role="img" aria-label="Daily paid revenue chart"></canvas></div></section>
+<section class="analytics-card"><h2>Daily paid revenue</h2><p style="color:var(--muted);font-size:12px">{{ report_start }} to {{ report_end }} · BDT</p><div class="analytics-chart"><canvas id="analyticsRevenue" role="img" aria-label="Daily paid revenue chart"></canvas></div></section>
 <section class="analytics-card"><h2>Best-selling products</h2><p style="color:var(--muted);font-size:12px">Ranked by units on paid invoices</p>
 {% for p in top_products %}<div class="rank"><div class="rank-num">{{ loop.index }}</div><div class="rank-info"><strong>{{ p.name }}</strong><small>{{ p.units }} units sold</small></div><span class="rank-value">৳{{ "{:,.2f}".format(p.revenue) }}</span></div>
 {% else %}<p class="empty-state">No paid sales in this period. <a href="{{ url_for('pos') }}">Make a test sale</a> to see analytics.</p>{% endfor %}
