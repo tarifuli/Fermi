@@ -368,12 +368,22 @@ def get_dashboard_stats(business_id=None):
         limit = threshold['low_stock_threshold'] if threshold else 20
         low_stock = db.execute("SELECT COUNT(*) FROM products WHERE stock>0 AND stock<=? AND business_id=?", (limit, business_id)).fetchone()[0]
         total_products = db.execute("SELECT COUNT(*) FROM products WHERE business_id=?", (business_id,)).fetchone()[0]
+        # Aggregate once per table instead of 14 separate day-level database round trips.
+        start_day = (datetime.now() - timedelta(days=6)).strftime('%Y-%m-%d')
+        sales_by_day = {r['day']: r['amount'] for r in db.execute(
+            """SELECT DATE(created_at) AS day, COALESCE(SUM(total),0) AS amount
+               FROM invoices WHERE business_id=? AND status='paid' AND created_at>=?
+               GROUP BY DATE(created_at)""", (business_id, start_day)).fetchall()}
+        refunds_by_day = {r['day']: r['amount'] for r in db.execute(
+            """SELECT DATE(r.created_at) AS day, COALESCE(SUM(r.amount),0) AS amount
+               FROM invoice_refunds r JOIN invoices i ON i.id=r.invoice_id
+               WHERE r.business_id=? AND i.status='paid' AND r.created_at>=?
+               GROUP BY DATE(r.created_at)""", (business_id, start_day)).fetchall()}
         daily = []
-        for i in range(6, -1, -1):
-            d = (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d')
-            sales = db.execute("SELECT COALESCE(SUM(total),0) FROM invoices WHERE DATE(created_at)=? AND status='paid' AND business_id=?", (d, business_id)).fetchone()[0]
-            returned = db.execute("SELECT COALESCE(SUM(r.amount),0) FROM invoice_refunds r JOIN invoices i ON i.id=r.invoice_id WHERE DATE(r.created_at)=? AND i.status='paid' AND r.business_id=?", (d, business_id)).fetchone()[0]
-            daily.append({'date': d, 'revenue': float(Decimal(str(sales))-Decimal(str(returned)))})
+        for offset in range(6, -1, -1):
+            day = (datetime.now() - timedelta(days=offset)).strftime('%Y-%m-%d')
+            net = Decimal(str(sales_by_day.get(day, 0))) - Decimal(str(refunds_by_day.get(day, 0)))
+            daily.append({'date': day, 'revenue': float(net)})
         return {'total_revenue': float(Decimal(str(gross))-Decimal(str(refunds))),
                 'month_revenue': float(Decimal(str(month_gross))-Decimal(str(month_refunds))),
                 'total_invoices': total_invoices, 'low_stock': low_stock,
@@ -651,23 +661,27 @@ def business_action_alerts(business_id):
         setting = db.execute('SELECT low_stock_threshold FROM inventory_settings WHERE business_id=?',
                              (business_id,)).fetchone()
         threshold = int(setting['low_stock_threshold']) if setting else 20
-        products = db.execute('SELECT id,name,stock FROM products WHERE business_id=? ORDER BY name,id',
-                              (business_id,)).fetchall()
+        out_count = db.execute('SELECT COUNT(*) FROM products WHERE business_id=? AND stock=0',
+                               (business_id,)).fetchone()[0]
+        low_count = db.execute('SELECT COUNT(*) FROM products WHERE business_id=? AND stock>0 AND stock<=?',
+                               (business_id, threshold)).fetchone()[0]
+        out_preview = db.execute('SELECT name FROM products WHERE business_id=? AND stock=0 ORDER BY name,id LIMIT 3',
+                                 (business_id,)).fetchall()
+        low_preview = db.execute('SELECT name FROM products WHERE business_id=? AND stock>0 AND stock<=? ORDER BY name,id LIMIT 3',
+                                 (business_id, threshold)).fetchall()
         pending = db.execute("SELECT COUNT(*) AS count FROM invoices WHERE business_id=? AND status='pending'",
                              (business_id,)).fetchone()['count']
         orders = db.execute("""SELECT COUNT(*) AS count FROM purchase_orders
             WHERE business_id=? AND status IN ('ordered','partially_received')""",
                             (business_id,)).fetchone()['count']
-    out = [p for p in products if int(p['stock']) == 0]
-    low = [p for p in products if 0 < int(p['stock']) <= threshold]
     alerts = []
-    if out:
-        alerts.append({'kind': 'out_of_stock', 'severity': 'critical', 'count': len(out),
-                       'title': 'Products out of stock', 'detail': ', '.join(p['name'] for p in out[:3]),
+    if out_count:
+        alerts.append({'kind': 'out_of_stock', 'severity': 'critical', 'count': out_count,
+                       'title': 'Products out of stock', 'detail': ', '.join(p['name'] for p in out_preview),
                        'action': 'Plan replenishment', 'url': '/inventory/replenishment/plan'})
-    if low:
-        alerts.append({'kind': 'low_stock', 'severity': 'warning', 'count': len(low),
-                       'title': 'Products running low', 'detail': ', '.join(p['name'] for p in low[:3]),
+    if low_count:
+        alerts.append({'kind': 'low_stock', 'severity': 'warning', 'count': low_count,
+                       'title': 'Products running low', 'detail': ', '.join(p['name'] for p in low_preview),
                        'action': 'Review inventory', 'url': '/products'})
     if pending:
         alerts.append({'kind': 'pending_invoices', 'severity': 'info', 'count': int(pending),
