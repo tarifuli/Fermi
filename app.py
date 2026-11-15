@@ -598,6 +598,98 @@ def analytics():
                            avg_order=(paid_revenue / paid_count if paid_count else Decimal('0')))
 
 
+
+@app.route('/reports/export')
+@login_required
+def export_business_report():
+    """Build 12: tenant-scoped, spreadsheet-friendly CSV exports."""
+    import csv
+    from datetime import date
+    from flask import Response
+
+    business_id, error = require_business()
+    if error:
+        return error
+    kind = request.args.get('type', 'sales')
+    if kind not in ('sales', 'inventory', 'refunds'):
+        return jsonify({'success': False, 'error': 'Invalid report type'}), 400
+
+    start = request.args.get('start', '')
+    end = request.args.get('end', '')
+    try:
+        if start:
+            start = date.fromisoformat(start).isoformat()
+        if end:
+            end = date.fromisoformat(end).isoformat()
+    except ValueError:
+        return jsonify({'success': False, 'error': 'Dates must be YYYY-MM-DD'}), 400
+    if start and end and start > end:
+        return jsonify({'success': False, 'error': 'Start date must not exceed end date'}), 400
+
+    if kind == 'sales':
+        headings = ['Invoice ID', 'Date', 'Customer', 'Status', 'Gross Total', 'Refunded', 'Net Total']
+        query = """SELECT i.id, i.created_at, i.customer_name, i.status, i.total,
+                    COALESCE((SELECT SUM(r.amount) FROM invoice_refunds r
+                      WHERE r.invoice_id=i.id AND r.business_id=i.business_id),0) AS refunded
+                    FROM invoices i WHERE i.business_id=?"""
+        params = [business_id]
+        if start:
+            query += ' AND i.created_at>=?'
+            params.append(start)
+        if end:
+            query += ' AND i.created_at<?'
+            params.append((date.fromisoformat(end) + timedelta(days=1)).isoformat())
+        query += ' ORDER BY i.created_at DESC, i.id DESC'
+        with get_db() as db:
+            rows = db.execute(query, tuple(params)).fetchall()
+        records = []
+        for r in rows:
+            gross = Decimal(str(r['total']))
+            refunded = Decimal(str(r['refunded']))
+            records.append([r['id'], str(r['created_at']), r['customer_name'],
+                            r['status'], str(gross), str(refunded), str(gross-refunded)])
+    elif kind == 'refunds':
+        headings = ['Refund ID', 'Invoice ID', 'Date', 'Amount', 'Reason']
+        query = """SELECT r.id, r.invoice_id, r.created_at, r.amount, r.reason
+                    FROM invoice_refunds r JOIN invoices i ON i.id=r.invoice_id
+                    WHERE r.business_id=? AND i.business_id=?"""
+        params = [business_id, business_id]
+        if start:
+            query += ' AND r.created_at>=?'
+            params.append(start)
+        if end:
+            query += ' AND r.created_at<?'
+            params.append((date.fromisoformat(end) + timedelta(days=1)).isoformat())
+        query += ' ORDER BY r.created_at DESC, r.id DESC'
+        with get_db() as db:
+            rows = db.execute(query, tuple(params)).fetchall()
+        records = [[r['id'], r['invoice_id'], str(r['created_at']), str(r['amount']), r['reason']] for r in rows]
+    else:
+        headings = ['Product ID', 'SKU', 'Product', 'Category', 'Unit Price', 'Stock', 'Inventory Value']
+        with get_db() as db:
+            rows = db.execute('SELECT id, sku, name, category, price, stock FROM products WHERE business_id=? ORDER BY name, id',
+                              (business_id,)).fetchall()
+        records = [[r['id'], r['sku'], r['name'], r['category'], str(r['price']), r['stock'],
+                    str(Decimal(str(r['price']))*int(r['stock']))] for r in rows]
+
+    def safe_cell(value):
+        # Prevent spreadsheet programs from evaluating user-controlled CSV cells as formulas.
+        value = '' if value is None else str(value)
+        if value.lstrip().startswith(('=', '+', '-', '@', '\\t', '\\r', '\\n')):
+            return "'" + value
+        return value
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(headings)
+    writer.writerows([[safe_cell(cell) for cell in row] for row in records])
+    filename = 'fermi-' + kind + '-report.csv'
+    response = Response(output.getvalue(), mimetype='text/csv; charset=utf-8')
+    response.headers['Content-Disposition'] = 'attachment; filename="' + filename + '"'
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
 def record_stock_movement(db, business_id, product_id, product_name, before, after, reason, source, reference_id=None):
     if before == after:
         return
