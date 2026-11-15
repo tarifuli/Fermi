@@ -114,6 +114,27 @@ class ReportExportTests(unittest.TestCase):
         self.assertIn('/purchase-orders', html)
         self.assertIn('Plan replenishment', self.client.get('/products').get_data(as_text=True))
 
+    def test_build14_notifications_are_live_and_business_scoped(self):
+        from app import get_db
+        initial = self.client.get('/notifications')
+        self.assertEqual(initial.status_code, 200)
+        self.assertEqual(initial.headers['Cache-Control'], 'no-store')
+        self.assertEqual(initial.get_json()['count'], 1)
+        self.assertEqual(initial.get_json()['alerts'][0]['kind'], 'low_stock')
+        with get_db() as db:
+            business = db.execute('SELECT business_id FROM business_memberships WHERE user_id=?',
+                                  (self.uid,)).fetchone()['business_id']
+            other = db.execute('SELECT id FROM businesses WHERE name=?', ('Shop 2',)).fetchone()['id']
+            db.execute('UPDATE products SET stock=0 WHERE business_id=?', (business,))
+            db.execute('UPDATE products SET stock=0 WHERE business_id=?', (other,))
+        refreshed = self.client.get('/notifications').get_json()
+        self.assertEqual(refreshed['count'], 1)
+        self.assertEqual(refreshed['alerts'][0]['kind'], 'out_of_stock')
+        self.assertEqual(refreshed['alerts'][0]['count'], 1)
+        html = self.client.get('/').get_data(as_text=True)
+        self.assertIn('Action center', html)
+        self.assertIn('Plan replenishment', html)
+
     def test_sales_refunds_export_and_invalid_dates(self):
         for kind in ('sales','refunds'):
             response = self.client.get('/reports/export?type='+kind)
