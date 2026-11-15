@@ -36,4 +36,5 @@ jobs:
       - run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/postgresql/006_invoice_refunds.sql
       - run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/postgresql/007_purchase_orders.sql
       - run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/postgresql/008_sales_returns.sql
+      - run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/postgresql/009_business_details.sql
       - run: python -m unittest discover -s tests -p 'test_postgres_integration.py' -v
