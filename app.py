@@ -522,7 +522,57 @@ def dashboard():
         onboarding = onboarding_status(db,business_id)
     return render_template('dashboard.html', stats=get_dashboard_stats(business_id),
                            onboarding=onboarding, has_business=business_id is not None,
-                           sales_7=get_sales_data(7, business_id)[:5], sales_30=get_sales_data(30, business_id)[:5])
+                           sales_7=get_sales_data(7, business_id)[:5], sales_30=get_sales_data(30, business_id)[:5],
+                           action_alerts=business_action_alerts(business_id))
+
+def business_action_alerts(business_id):
+    """Live, business-scoped operational alerts; no background jobs or stored notifications."""
+    if business_id is None:
+        return []
+    with get_db() as db:
+        setting = db.execute('SELECT low_stock_threshold FROM inventory_settings WHERE business_id=?',
+                             (business_id,)).fetchone()
+        threshold = int(setting['low_stock_threshold']) if setting else 20
+        products = db.execute('SELECT id,name,stock FROM products WHERE business_id=? ORDER BY name,id',
+                              (business_id,)).fetchall()
+        pending = db.execute("SELECT COUNT(*) AS count FROM invoices WHERE business_id=? AND status='pending'",
+                             (business_id,)).fetchone()['count']
+        orders = db.execute("""SELECT COUNT(*) AS count FROM purchase_orders
+            WHERE business_id=? AND status IN ('ordered','partially_received')""",
+                            (business_id,)).fetchone()['count']
+    out = [p for p in products if int(p['stock']) == 0]
+    low = [p for p in products if 0 < int(p['stock']) <= threshold]
+    alerts = []
+    if out:
+        alerts.append({'kind': 'out_of_stock', 'severity': 'critical', 'count': len(out),
+                       'title': 'Products out of stock', 'detail': ', '.join(p['name'] for p in out[:3]),
+                       'action': 'Plan replenishment', 'url': '/inventory/replenishment/plan'})
+    if low:
+        alerts.append({'kind': 'low_stock', 'severity': 'warning', 'count': len(low),
+                       'title': 'Products running low', 'detail': ', '.join(p['name'] for p in low[:3]),
+                       'action': 'Review inventory', 'url': '/products'})
+    if pending:
+        alerts.append({'kind': 'pending_invoices', 'severity': 'info', 'count': int(pending),
+                       'title': 'Pending invoices', 'detail': 'Invoices awaiting payment or review',
+                       'action': 'Review invoices', 'url': '/invoices'})
+    if orders:
+        alerts.append({'kind': 'incoming_orders', 'severity': 'info', 'count': int(orders),
+                       'title': 'Purchase orders awaiting receipt', 'detail': 'Ordered or partially received stock',
+                       'action': 'Review purchase orders', 'url': '/purchase-orders'})
+    return alerts
+
+
+@app.route('/notifications')
+@login_required
+def business_notifications():
+    business_id, error = require_business()
+    if error:
+        return error
+    alerts = business_action_alerts(business_id)
+    response = jsonify({'success': True, 'count': len(alerts), 'alerts': alerts})
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
 
 @app.route('/analytics')
 @login_required
