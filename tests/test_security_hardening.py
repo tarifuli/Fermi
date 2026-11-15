@@ -11,6 +11,13 @@ class SecurityHardeningTests(unittest.TestCase):
         self.assertEqual(response.headers['X-Content-Type-Options'],'nosniff')
         self.assertEqual(response.headers['X-Frame-Options'],'DENY')
         self.assertIn('strict-origin',response.headers['Referrer-Policy'])
+    def test_request_size_limit(self):
+        self.assertEqual(app.config['MAX_CONTENT_LENGTH'], 2 * 1024 * 1024)
+        response=self.client.post('/login',data={'email':'a'* (2*1024*1024), 'password':'x'})
+        self.assertEqual(response.status_code,413)
+    def test_auth_page_not_cached(self):
+        response=self.client.get('/login')
+        self.assertIn('no-store',response.headers['Cache-Control'])
     def test_cross_site_post_blocked(self):
         response=self.client.post('/login',headers={'Sec-Fetch-Site':'cross-site'},data={'email':'x','password':'x'})
         self.assertEqual(response.status_code,403)
