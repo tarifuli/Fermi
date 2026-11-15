@@ -1568,19 +1568,25 @@ def download_pdf(inv_id):
     total_number = style('total-number', 10, navy, False, TA_RIGHT)
     grand_label = style('grand-label', 11, navy, True)
     grand_number = style('grand-number', 11, navy, True, TA_RIGHT)
-    totals = Table([
-        [p('Subtotal', total_label), p('BDT ' + money(inv['subtotal']), total_number)],
-        [p('Tax (5%)', total_label), p('BDT ' + money(inv['tax']), total_number)],
-        [p('Total (BDT)', grand_label), p('BDT ' + money(inv['total']), grand_number)],
-    ], colWidths=[width * .70, width * .30])
+    total_rows = [[p('Subtotal', total_label), p('BDT ' + money(inv['subtotal']), total_number)]]
+    if inv.get('discount'):
+        total_rows.append([p('Discount', total_label), p('-BDT ' + money(inv['discount']), total_number)])
+    total_rows.extend([
+        [p('Tax (5%) after discount', total_label), p('BDT ' + money(inv['tax']), total_number)],
+        [p('Total (BDT)', grand_label), p('BDT ' + money(inv['total']), grand_number)]
+    ])
+    totals = Table(total_rows, colWidths=[width * .70, width * .30])
+    last_row = len(total_rows) - 1
     totals.setStyle(TableStyle([
-        ('BACKGROUND', (0, 2), (-1, 2), sky),
-        ('LINEBELOW', (0, 0), (-1, 1), .5, border),
+        ('BACKGROUND', (0, last_row), (-1, last_row), sky),
+        ('LINEBELOW', (0, 0), (-1, last_row - 1), .5, border),
         ('LEFTPADDING', (0, 0), (-1, -1), 10),
         ('RIGHTPADDING', (0, 0), (-1, -1), 10),
         ('TOPPADDING', (0, 0), (-1, -1), 8),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
     ]))
+    story.append(p('Payment method: ' + str(inv.get('payment_method', 'unspecified')).replace('_', ' ').title(),
+                   style('payment-method', 9, muted)))
     story.append(totals)
     if inv.get('notes'):
         small_gap(20)
