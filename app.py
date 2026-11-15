@@ -764,6 +764,19 @@ def products():
                            out_count=sum(p['stock'] == 0 for p in prods))
 
 
+@app.route('/inventory/replenishment/plan')
+@login_required
+def replenishment_plan_page():
+    """Interactive reorder planning; draft orders require explicit confirmation."""
+    business_id, error = require_business()
+    if error:
+        return error
+    with get_db() as db:
+        suppliers = db.execute('SELECT id,name FROM suppliers WHERE business_id=? ORDER BY name,id',
+                               (business_id,)).fetchall()
+    return render_template('replenishment.html', suppliers=suppliers)
+
+
 @app.route('/inventory/replenishment')
 @login_required
 def inventory_replenishment():
