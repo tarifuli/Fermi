@@ -52,7 +52,13 @@
     <div class="ws-hero-icon" aria-hidden="true">🏪</div>
   </header>
   <div class="ws-banner" role="status"><span aria-hidden="true">✓</span><span>Your business profile was created successfully. You're ready to explore.</span></div>
-  <div class="ws-grid">
+  <section class="ws-panel" style="margin-top:20px">
+<h2>Real setup progress — {{ onboarding.completed }} of {{ onboarding.total }} completed</h2>
+<p class="ws-muted">This checklist reflects saved products, invoices, contact details, and inventory preferences.</p>
+{% for step in onboarding.steps %}<div class="ws-step"><span aria-hidden="true">{{ '✓' if step.done else '○' }}</span><div><strong>{{ step.title }}</strong><a href="{{ step.url }}">{{ 'Review' if step.done else 'Complete step' }} →</a></div></div>{% endfor %}
+<a class="btn btn-primary" href="/business/settings" style="margin-top:14px">Edit business settings</a>
+</section>
+<div class="ws-grid">
     <div>
       <section class="ws-panel" aria-labelledby="checklistTitle">
         <h2 id="checklistTitle">Your getting-started checklist</h2>
