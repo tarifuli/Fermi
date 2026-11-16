@@ -440,7 +440,10 @@ def login():
                 clear_failures(db, email, peer)
             if len(user['password']) == 64 and all(c in '0123456789abcdef' for c in user['password']):
                 with get_db() as db:
-                    db.execute('UPDATE users SET password=? WHERE id=?', (hash_password(password), user['id']))
+                    upgraded_hash = hash_password(password)
+                    db.execute('UPDATE users SET password=? WHERE id=?', (upgraded_hash, user['id']))
+                user = dict(user)
+                user['password'] = upgraded_hash
             session.clear()
             session.permanent = True
             session['user_id']   = user['id']
