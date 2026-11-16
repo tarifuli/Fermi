@@ -1,85 +1,39 @@
-# Fermi Preview and production database release gates
+# Fermi database isolation and release verification — 2026-11-16
 
-This checklist protects live customer and financial data. Do not use a production
-`DATABASE_URL` in Preview, CI, or local development, including for read-only
-acceptance tests that might unexpectedly write through startup hooks.
+## Guardrails
+Do not change production data, copy Production secrets to Preview, merge into `main`, or deploy Production without explicit owner approval. GitHub/CI temporary databases and Neon's development branch may be used for disposable acceptance tests.
 
-## Evidence from 2026-11-16 inspection
-- The Vercel project `fermi` has a Preview-only `SECRET_KEY` and a
-  Production-only `DATABASE_URL` listed. These settings do **not**
-  establish a usable Preview PostgreSQL connection.
-- The default `main` code is an older SQLite-backed application; the
-  latest PostgreSQL-aware application is on
-  `feature/postgres-vercel-migration`. Do not merge without approval.
-- Feature-branch GitHub Actions PostgreSQL integration successfully
-  applies migrations 001–011 to its **isolated ephemeral CI PostgreSQL**
-  service. It does not inspect or migrate Neon production.
+## Verified Neon state (direct read-only inspection)
+- Neon project: `fermi-preview` (`square-surf-62430524`); the project name is not evidence of the branch target.
+- Production branch: `production` / `br-floral-thunder-b5t2gsvz`, default branch, endpoint `ep-old-waterfall-b595jgth`.
+- Development branch: `development` / `br-soft-forest-b5utb5uy`, separate endpoint `ep-quiet-resonance-b5ctc044`.
+- Both branches contain 20 application tables. The branch-to-branch PostgreSQL schema comparison returned an empty diff.
+- Migration 011's intended schema is **present in both branches**: `invoices.discount NUMERIC NOT NULL DEFAULT 0` and `invoices.payment_method TEXT NOT NULL DEFAULT 'unspecified'`.
+- Read-only row-count check: Production has 2 users, 2 businesses, 4 products, 17 invoices; development has zero rows in each of those tables. No customer contents, passwords or secret values were retrieved.
+- Historical execution of migration scripts is not independently recorded by a migration ledger, so this confirms schema-equivalent application of 011, not the historical execution event. No production writes were made.
+- No Neon snapshots were listed. Backups/restore readiness remains unverified.
 
-## Database verification (Neon SQL editor, read-only)
-Run against the **production** branch and copy only table/column names,
-never connection strings, record contents, or credentials.
+## Verified Vercel state
+- Vercel project `fermi`, ID `prj_VFTEglqd6TQPx4bJSP5MGHoUyAM3`.
+- `DATABASE_URL` and `SECRET_KEY` now exist as **Preview-only sensitive variables**, created 2026-11-16. The Preview URL was obtained for the exact Neon development branch, and the Preview signing secret is independent of Production.
+- Existing `DATABASE_URL` and `SECRET_KEY` remain **Production-only sensitive variables** and were not changed. Their contents remain encrypted in Vercel's read API; therefore, a direct comparison of the Production `DATABASE_URL` hostname against Neon's production endpoint has **not** been completed.
+- A new **Preview-only** deployment of `feature/postgres-vercel-migration` commit `8456d9c3a834f94f6487baa18534bedd9be0b056` reached `READY`: https://fermi-q48yrtko2-fermi3.vercel.app
+- Live GET smoke tests returned HTTP 200 for `/login` and `/signup`; anonymous requests to `/`, `/products`, `/pos`, and `/invoices` redirected to the login page. This confirms only basic rendering and anonymous access control.
+- The current **Production** deployment from `main` (`7a5f59858f00cdfc45bf97f994d4549754f396da`) returned HTTP 500 on `/` and `/login`. Vercel runtime traceback confirmed `sqlite3.OperationalError: unable to open database file` during `app.py` import. Production was **not** changed.
+- An isolated, ephemeral Vercel sandbox successfully opened a protected Preview login page. The transactional test automation was blocked by a tool safety check; the sandbox was subsequently stopped. Do not treat this as authenticated acceptance.
 
-```sql
-SELECT current_database() AS database_name, current_schema() AS schema_name;
-SELECT table_name
-FROM information_schema.tables
-WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-ORDER BY table_name;
-SELECT column_name, data_type, is_nullable, column_default
-FROM information_schema.columns
-WHERE table_schema = 'public' AND table_name = 'invoices'
-  AND column_name IN ('discount','payment_method')
-ORDER BY column_name;
-SELECT indexname
-FROM pg_indexes
-WHERE schemaname = 'public'
-ORDER BY indexname;
-```
+## CI
+- PR #5 was merged into `feature/postgres-vercel-migration`, **not** `main`.
+- GitHub Actions checks for the feature-branch commit passed, including PostgreSQL integration with migrations 001–011 and regression/security tests:
+  - https://github.com/tarifuli/Fermi/actions/runs/43868586360
+  - https://github.com/tarifuli/Fermi/actions/runs/43868586308
+- CI runs against an isolated temporary PostgreSQL service, not live Neon Production.
 
-Migration 011 is present only if `invoices.discount` and
-`invoices.payment_method` exist with the expected definitions, and the
-migration is applied to the correct database. There is no version ledger in
-these plain SQL scripts; inspecting the schema is necessary. Do not execute
-ALTER, INSERT, UPDATE, DELETE, or migration files on production without a
-separate approval and a verified restorable backup.
+## Remaining mandatory release gates
+1. Verify the actual Production deployment connection points to Neon `production` (not `development`), using a secret-safe comparison by authorized infrastructure tooling. Do not print credentials.
+2. Complete authenticated **live Preview** tests on the isolated development branch with a disposable user and business: signup/login/logout, optional onboarding, owner/staff/viewer roles, tenant isolation, products/stock/alerts, suppliers/PO receiving, POS checkout with discount/payment method, duplicate checkout replay, invoice view/PDF, returns/refunds, analytics/reports, and CSRF/rate limits.
+3. Check Preview runtime logs after the actual authenticated tests, and reconcile expected stock, invoice, refund, and ledger records. Do not claim success from HTTP 200 login screens alone.
+4. Prove that Production has a restorable backup/restore plan and establish load/performance targets.
+5. Prepare/review a full release PR from the PostgreSQL feature branch to `main`, verify CI for the exact candidate commit, and obtain **explicit user approval** before any merge or Production deploy. Changing `main` may trigger automatic Production deployment.
 
-## Vercel configuration prerequisites
-1. In Neon, identify the production and development database branches and
-   verify that their connection targets are different. Prefer a separate
-   Preview database with separate credentials and least-privilege access.
-2. In Vercel, configure `DATABASE_URL` as a server-only **Preview**
-   Secret pointing exclusively to the development Neon branch. Never copy
-   the Production `DATABASE_URL` to Preview.
-3. Configure a stable, sufficiently random `SECRET_KEY` as **Production**
-   Secret. Keep the Preview secret distinct from Production.
-4. Keep Production `DATABASE_URL` scoped to Production. Never expose
-   these secrets through `NEXT_PUBLIC_`, repository files, logs, or PRs.
-5. The optional `ANTHROPIC_API_KEY` is only needed to test Claude chat.
-   Gemini integration requires separate code and credentials; do not
-   assume the existing chat is Gemini.
-6. Vercel environment changes affect new deployments: trigger only a
-   Preview redeployment after isolation is independently verified.
-7. Verify the deployment branch/commit is the intended reviewed Preview
-   revision; Production must remain unchanged.
-
-## Preview acceptance checklist
-Use a disposable test account and test business **only on the isolated
-development database**, and remove test records when safe.
-
-- [ ] GET /login and /signup work without server errors
-- [ ] Signup, login, logout and repeated login work
-- [ ] Explore-first onboarding, business profile and team roles work
-- [ ] Owner/staff/viewer authorization and tenant separation hold
-- [ ] Products, stock changes and low-stock notifications work
-- [ ] Suppliers, purchase orders and receiving work
-- [ ] POS checkout, discount, payment method and duplicate-key retry work
-- [ ] Invoice view, PDF and history totals agree
-- [ ] Returns/refunds correct inventory and sales reporting
-- [ ] Reports and Fermi AI responses use correct scoped business data
-- [ ] CSRF, cookies, rate limits and invalid inputs behave safely
-- [ ] Preview runtime logs have no unexpected 500 errors
-- [ ] All GitHub Actions checks pass on the **exact** candidate SHA
-
-A `READY` deployment and HTTP 200 login page are insufficient evidence
-for authenticated acceptance. Preserve a no-go state until all checks
-are independently verified. No automatic merge or Production deployment.
+**Release decision: NO-GO.** Production is currently unavailable on the old SQLite code; verified Preview smoke tests do not justify a release.
