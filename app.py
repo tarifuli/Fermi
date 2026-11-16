@@ -107,6 +107,34 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
+
+def session_password_fingerprint(stored_password):
+    """Bind signed sessions to the current password hash, without storing the hash."""
+    return hashlib.sha256(stored_password.encode('utf-8')).hexdigest()
+
+
+@app.before_request
+def invalidate_sessions_after_password_change():
+    """Reject sessions from other devices after a password change.
+
+    Legacy sessions without a fingerprint are rejected, rather than silently
+    bypassing revocation. Unit tests that inject synthetic sessions can opt out
+    unless explicitly testing this guard.
+    """
+    if 'user_id' not in session:
+        return None
+    if app.config.get('TESTING') and not app.config.get('ENFORCE_SESSION_BINDING_IN_TESTS'):
+        return None
+    with get_db() as db:
+        user = db.execute('SELECT password FROM users WHERE id=?', (session['user_id'],)).fetchone()
+    if not user or not secrets.compare_digest(
+        session.get('_password_fingerprint', ''),
+        session_password_fingerprint(user['password'])
+    ):
+        session.clear()
+        return redirect(url_for('login'))
+    return None
+
 # ── DATABASE ─────────────────────────────────────────────────────────────────
 def get_db():
     return connect_database()
@@ -412,12 +440,16 @@ def login():
                 clear_failures(db, email, peer)
             if len(user['password']) == 64 and all(c in '0123456789abcdef' for c in user['password']):
                 with get_db() as db:
-                    db.execute('UPDATE users SET password=? WHERE id=?', (hash_password(password), user['id']))
+                    upgraded_hash = hash_password(password)
+                    db.execute('UPDATE users SET password=? WHERE id=?', (upgraded_hash, user['id']))
+                user = dict(user)
+                user['password'] = upgraded_hash
             session.clear()
             session.permanent = True
             session['user_id']   = user['id']
             session['user_name'] = user['name']
             session['user_email']= user['email']
+            session['_password_fingerprint'] = session_password_fingerprint(user['password'])
             return redirect(url_for('dashboard'))
         else:
             with get_db() as db:
@@ -452,6 +484,7 @@ def signup():
                     session['user_id']    = user['id']
                     session['user_name']  = user['name']
                     session['user_email'] = user['email']
+                    session['_password_fingerprint'] = session_password_fingerprint(user['password'])
                 return redirect(url_for('dashboard'))
             except Exception as e:
                 if 'UNIQUE' in str(e):

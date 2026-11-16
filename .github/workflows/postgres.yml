@@ -1,7 +1,7 @@
 name: PostgreSQL integration
 on:
   push:
-    branches: [feature/postgres-vercel-migration]
+    branches: [feature/postgres-vercel-migration, fix/build17-release-gates]
   pull_request:
 jobs:
   postgres:
@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
       - run: pip install -r requirements.txt
       - run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/postgresql/001_initial_schema.sql
       - run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/postgresql/002_expenses.sql
@@ -38,4 +38,5 @@ jobs:
       - run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/postgresql/008_sales_returns.sql
       - run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/postgresql/009_business_details.sql
       - run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/postgresql/010_auth_login_limits.sql
+      - run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/postgresql/011_pos_discounts_payment_methods.sql
       - run: python -m unittest discover -s tests -p 'test_postgres_integration.py' -v
