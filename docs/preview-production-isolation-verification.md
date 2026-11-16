@@ -11,7 +11,8 @@ Do not change production data, copy Production secrets to Preview, merge into `m
 - Migration 011's intended schema is **present in both branches**: `invoices.discount NUMERIC NOT NULL DEFAULT 0` and `invoices.payment_method TEXT NOT NULL DEFAULT 'unspecified'`.
 - Read-only row-count check: Production has 2 users, 2 businesses, 4 products, 17 invoices; development has zero rows in each of those tables. No customer contents, passwords or secret values were retrieved.
 - Historical execution of migration scripts is not independently recorded by a migration ledger, so this confirms schema-equivalent application of 011, not the historical execution event. No production writes were made.
-- No Neon snapshots were listed. Backups/restore readiness remains unverified.
+- No Neon snapshots were listed, and the Production branch's scheduled snapshot list is empty. The project has only 6 hours of history retention. A tested restorable backup remains a release blocker.
+- The Production Neon branch is currently `protected: false`; enable branch protection only under a separately approved infrastructure change.
 
 ## Verified Vercel state
 - Vercel project `fermi`, ID `prj_VFTEglqd6TQPx4bJSP5MGHoUyAM3`.
