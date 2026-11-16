@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Customer Profile — Fermi{% endblock %}
+{% block topbar_title %}Customer Profile{% endblock %}
+{% block extra_styles %}<style>
+.profile-shell{max-width:860px;margin:0 auto 50px}
+.profile-hero{background:linear-gradient(120deg,#193a59,#286989);border-radius:18px;padding:30px;color:#fff;margin-bottom:22px}
+.profile-hero h1{font-size:28px;margin:8px 0}
+.profile-hero p{font-size:13px;color:#d5e7f2;line-height:1.6}
+.profile-card{background:white;border:1px solid var(--border);border-radius:16px;padding:28px;box-shadow:var(--shadow)}
+.profile-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.profile-field label{display:block;color:var(--navy);font-weight:700;font-size:13px;margin-bottom:7px}
+.profile-field input,.profile-field textarea{width:100%;border:1px solid var(--border);border-radius:9px;padding:12px;font:inherit}
+.profile-field input:focus,.profile-field textarea:focus{outline:2px solid var(--blue)}
+.profile-field.full{grid-column:1/-1}
+.profile-note{color:var(--muted);font-size:12px;line-height:1.7;margin:18px 0}
+.profile-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}
+@media(max-width:650px){.profile-grid{grid-template-columns:1fr}.profile-card{padding:20px}}
+</style>{% endblock %}
+{% block content %}
+<div class="profile-shell">
+<a href="{{ url_for('customer_history', name=customer_key) }}" style="color:var(--blue);font-size:13px;text-decoration:none">← Back to purchase history</a>
+<div class="profile-hero" style="margin-top:16px"><div style="font-size:12px;letter-spacing:1px">CUSTOMER RELATIONSHIP</div><h1 id="profileLiveName">{{ profile.display_name }}</h1><p>Keep your customer's contact details and relationship notes organized without changing previous invoices.</p></div>
+{% if saved %}<div class="alert alert-success" role="status">Customer profile saved successfully.</div>{% endif %}
+<div class="profile-card"><h2 style="color:var(--navy);font-size:20px;margin-bottom:20px">Customer details</h2>
+<form method="post" action="{{ url_for('customer_profile', name=customer_key) }}">
+<div class="profile-grid">
+<div class="profile-field full"><label for="display_name">Display name</label><input id="display_name" name="display_name" required maxlength="200" value="{{ profile.display_name }}" autocomplete="organization"></div>
+<div class="profile-field"><label for="email">Email address</label><input id="email" name="email" type="email" maxlength="254" value="{{ profile.email }}"></div>
+<div class="profile-field"><label for="phone">Phone number</label><input id="phone" name="phone" type="tel" maxlength="40" value="{{ profile.phone }}"></div>
+<div class="profile-field full"><label for="notes">Relationship notes</label><textarea id="notes" name="notes" rows="5" maxlength="2000" placeholder="Preferences, follow-up reminders, delivery instructions…">{{ profile.notes }}</textarea><div style="text-align:right;color:var(--muted);font-size:12px;margin-top:5px" id="noteCount">0 / 2000</div></div>
+</div>
+<p class="profile-note">This profile is private to your business. Updating it does not rewrite historical invoices, invoice totals, or PDF receipts. Customers are currently matched to invoice history by the original invoice name.</p>
+<div class="profile-actions"><button class="btn btn-primary" type="submit">Save customer profile</button><a class="btn btn-ghost" href="{{ url_for('customer_history', name=customer_key) }}">View purchase history</a></div>
+</form></div></div>
+{% endblock %}
+{% block scripts %}<script>
+const nameInput=document.getElementById('display_name');nameInput.addEventListener('input',()=>{document.getElementById('profileLiveName').textContent=nameInput.value.trim()||'Customer profile'});
+const notes=document.getElementById('notes');function updateCount(){document.getElementById('noteCount').textContent=notes.value.length+' / 2000'}notes.addEventListener('input',updateCount);updateCount();
+</script>{% endblock %}

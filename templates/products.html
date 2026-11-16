@@ -5,18 +5,29 @@
 {% block content %}
 <div class="page-header">
   <div class="page-title">Products & Stock</div>
+  <a class="btn btn-ghost" href="/products/history">Stock movement history</a>
+  <a class="btn btn-ghost" href="{{ url_for('replenishment_plan_page') }}">Plan replenishment</a>
   <button class="btn btn-primary" onclick="openModal('addModal')">
     <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
     Add Product
   </button>
 </div>
 
-<div id="alert-box"></div>
+<div id="alert-box"></div><div class="stats-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:18px"><div class="stat-card"><div class="stat-label">Products</div><div class="stat-value">{{ products|length }}</div></div><div class="stat-card"><div class="stat-label">Low stock (1–{{ threshold }})</div><div class="stat-value">{{ low_count }}</div></div><div class="stat-card"><div class="stat-label">Out of stock</div><div class="stat-value">{{ out_count }}</div></div></div>
 
+<div class="card" style="margin-bottom:18px">
+  <div class="card-header"><span class="card-title">Business low-stock settings</span></div>
+  <p style="margin-bottom:10px;color:var(--muted)">Your business chooses its own reorder threshold. Products with stock greater than zero and at or below this number are flagged low. Zero stock is always out of stock.</p>
+  <div style="display:flex;align-items:center;gap:10px;max-width:420px">
+    <label for="thresholdInput">Low-stock quantity</label>
+    <input id="thresholdInput" class="form-control" type="number" min="0" max="100000000" step="1" value="{{ threshold }}">
+    <button class="btn btn-primary" onclick="saveThreshold()">Save</button>
+  </div>
+</div>
 <div class="card">
   <div class="card-header">
     <span class="card-title">All Products ({{ products|length }})</span>
-    <input class="form-control" style="width:220px;" placeholder="🔍 Search products..." oninput="filterTable(this.value)">
+    <select class="form-control" id="stockFilter" style="width:155px" onchange="filterTable()" aria-label="Stock filter"><option value="all">All stock</option><option value="low">Low stock</option><option value="out">Out of stock</option><option value="ok">In stock</option></select><input class="form-control" style="width:220px;" placeholder="🔍 Search products..." id="inventorySearch" oninput="filterTable()">
   </div>
   <div class="table-wrap">
     <table id="productsTable">
@@ -33,16 +44,16 @@
       </thead>
       <tbody>
         {% for p in products %}
-        <tr data-search="{{ p.name|lower }} {{ p.sku|lower }} {{ p.category|lower }}">
+        <tr data-search="{{ (p.name ~ ' ' ~ p.sku ~ ' ' ~ (p.category or ''))|lower|e }}" data-stock="{{ p.stock }}" data-threshold="{{ threshold }}">
           <td style="font-weight:500;">{{ p.name }}</td>
           <td style="font-family:monospace;font-size:12px;color:var(--muted);">{{ p.sku }}</td>
           <td>{{ p.category or '—' }}</td>
           <td style="font-weight:600;">৳{{ "{:,.2f}".format(p.price) }}</td>
-          <td style="font-weight:600;color:{% if p.stock < 20 %}var(--red){% elif p.stock < 50 %}var(--amber){% else %}var(--teal){% endif %};">{{ p.stock }}</td>
-          <td><span class="badge {% if p.stock < 20 %}badge-low{% else %}badge-ok{% endif %}">{% if p.stock < 20 %}Low Stock{% else %}In Stock{% endif %}</span></td>
+          <td style="font-weight:600;color:{% if p.stock == 0 %}var(--red){% elif p.stock <= threshold %}var(--amber){% else %}var(--teal){% endif %};">{{ p.stock }}</td>
+          <td><span class="badge {% if p.stock <= threshold or p.stock == 0 %}badge-low{% else %}badge-ok{% endif %}">{% if p.stock == 0 %}Out of Stock{% elif p.stock <= threshold %}Low Stock{% else %}In Stock{% endif %}</span></td>
           <td>
             <button class="btn btn-ghost btn-sm" onclick='openEdit({{ p | tojson }})'>Edit</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteProduct({{ p.id }}, this)">Delete</button>
+            <button class="btn btn-ghost btn-sm" onclick='openAdjustment({{ p.id }}, {{ p.name|tojson }}, {{ p.stock }})'>Adjust stock</button> <button class="btn btn-ghost btn-sm" onclick='openReturn({{ p.id }}, {{ p.name|tojson }}, {{ p.stock }})'>Return product</button><button class="btn btn-danger btn-sm" onclick="deleteProduct({{ p.id }}, this)">Delete</button>
           </td>
         </tr>
         {% else %}
@@ -53,7 +64,15 @@
   </div>
 </div>
 
-<!-- Add Modal -->
+<div class="modal-overlay" id="returnModal"><div class="modal">
+<div class="modal-header"><span class="modal-title">Return product to inventory</span><button class="modal-close" onclick="closeModal('returnModal')">×</button></div>
+<p id="returnProductLabel" style="margin-bottom:12px"></p><input type="hidden" id="returnProductId">
+<label class="form-label" for="returnQuantity">Quantity returned</label><input id="returnQuantity" class="form-control" type="number" min="1" max="100000" step="1" value="1">
+<label class="form-label" for="returnReason" style="margin-top:12px">Return reason (optional)</label><input id="returnReason" class="form-control" maxlength="500" placeholder="e.g. Customer returned unused item">
+<p style="font-size:12px;color:var(--muted);margin:12px 0">Returned quantity is added to sellable stock and recorded in stock movement history. This does not issue a refund or change the original invoice.</p>
+<button class="btn btn-primary" id="returnSubmit" onclick="saveReturn()">Add returned stock</button>
+</div></div>
+<div class="modal-overlay" id="adjustModal"><div class="modal"><div class="modal-header"><span class="modal-title">Adjust stock</span><button class="modal-close" onclick="closeModal('adjustModal')">×</button></div><p id="adjustProductLabel" style="margin-bottom:12px"></p><input type="hidden" id="adjustProductId"><label class="form-label" for="adjustDelta">Stock change (+ to restock, − to reduce)</label><input id="adjustDelta" class="form-control" type="number" step="1" min="-100000" max="100000"><label class="form-label" for="adjustReason">Reason (shown in history)</label><input id="adjustReason" class="form-control" maxlength="500" placeholder="e.g. New shipment, damaged stock"><p style="font-size:12px;color:var(--muted);margin:12px 0">Cannot reduce stock below zero.</p><button id="adjustSubmit" class="btn btn-primary" onclick="saveAdjustment()">Apply adjustment</button></div></div><!-- Add Modal -->
 <div class="modal-overlay" id="addModal">
   <div class="modal">
     <div class="modal-header">
@@ -142,12 +161,63 @@ function showAlert(msg, type='success') {
   setTimeout(() => b.innerHTML = '', 3000);
 }
 
-function filterTable(q) {
-  document.querySelectorAll('#productsTable tbody tr').forEach(row => {
-    row.style.display = row.dataset.search?.includes(q.toLowerCase()) ? '' : 'none';
-  });
+async function saveThreshold(){
+ const threshold=Number(document.getElementById('thresholdInput').value);
+ if(!Number.isInteger(threshold)||threshold<0||threshold>100000000)return showAlert('Enter a valid whole-number threshold','error');
+ try{
+  const res=await fetch('/products/threshold',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({threshold})});
+  const data=await res.json();
+  if(!res.ok||!data.success)throw Error(data.error||'Unable to save threshold');
+  location.reload();
+ }catch(e){showAlert(e.message,'error')}
 }
-
+function filterTable() {
+ const q=document.getElementById('inventorySearch').value.toLowerCase();
+ const f=document.getElementById('stockFilter').value;
+ document.querySelectorAll('#productsTable tbody tr[data-stock]').forEach(row=>{
+  const n=Number(row.dataset.stock);
+  row.hidden=!(row.dataset.search.includes(q)&&(f==='all'||(f==='low'&&n>0&&n<=Number(row.dataset.threshold))||(f==='out'&&n===0)||(f==='ok'&&n>Number(row.dataset.threshold))));
+ });
+}
+function openReturn(id,name,stock){
+ document.getElementById('returnProductId').value=id;
+ document.getElementById('returnProductLabel').textContent=name+' · Current stock: '+stock;
+ document.getElementById('returnQuantity').value=1;
+ document.getElementById('returnReason').value='';
+ openModal('returnModal');
+}
+async function saveReturn(){
+ const id=document.getElementById('returnProductId').value;
+ const quantity=Number(document.getElementById('returnQuantity').value);
+ if(!Number.isInteger(quantity)||quantity<1||quantity>100000)return showAlert('Enter a positive whole-number quantity.','error');
+ const btn=document.getElementById('returnSubmit');btn.disabled=true;
+ try{
+  const response=await fetch('/products/return/'+id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({quantity,reason:document.getElementById('returnReason').value})});
+  const result=await response.json();
+  if(!response.ok||!result.success)throw Error(result.error||'Return could not be recorded');
+  location.reload();
+ }catch(error){showAlert(error.message,'error');btn.disabled=false}
+}
+function openAdjustment(id,name,stock){
+ document.getElementById('adjustProductId').value=id;
+ document.getElementById('adjustProductLabel').textContent=name+' · Current stock: '+stock;
+ document.getElementById('adjustDelta').value='';
+ document.getElementById('adjustReason').value='';
+ openModal('adjustModal');
+}
+async function saveAdjustment(){
+ const id=document.getElementById('adjustProductId').value;
+ const value=document.getElementById('adjustDelta').value;
+ const delta=Number(value);
+ if(!value||!Number.isInteger(delta)||delta===0||Math.abs(delta)>100000){showAlert('Enter a non-zero whole-number adjustment.','error');return}
+ const btn=document.getElementById('adjustSubmit');btn.disabled=true;
+ try{
+  const response=await fetch('/products/adjust/'+id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({delta,reason:document.getElementById('adjustReason').value})});
+  const result=await response.json();
+  if(!response.ok||!result.success)throw Error(result.error||'Stock update failed');
+  location.reload();
+ }catch(error){showAlert(error.message,'error');btn.disabled=false}
+}
 async function addProduct() {
   const data = {
     name: document.getElementById('add-name').value,

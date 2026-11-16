@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Purchase Order #{{ order.id }} — Fermi{% endblock %}
+{% block topbar_title %}Purchase Order #{{ order.id }}{% endblock %}
+{% block content %}
+<div class="page-header"><div><div class="page-title">PO #{{ order.id }} — {{ order.supplier_name }}</div><p style="color:var(--muted);margin-top:6px">{{ order.status|replace('_',' ')|title }} · Created {{ order.created_at }}</p></div><a href="/purchase-orders" class="btn btn-ghost">All purchase orders</a></div>
+<div class="card" style="margin-bottom:20px"><div class="card-header"><span class="card-title">Order lines & receipts</span></div>
+<div class="table-wrap"><table><thead><tr><th>Product</th><th>Ordered</th><th>Received</th><th>Outstanding</th><th>Unit cost (BDT)</th>{% if order.status in ('ordered','partially_received') %}<th>Receive now</th>{% endif %}</tr></thead><tbody>
+{% for i in items %}<tr><td>{{ i.product_name }} <small style="color:var(--muted)">{{ i.sku }}</small></td><td>{{ i.quantity_ordered }}</td><td>{{ i.quantity_received }}</td><td>{{ i.quantity_ordered-i.quantity_received }}</td><td>৳{{ "{:,.2f}".format(i.unit_cost|float) }}</td>
+{% if order.status in ('ordered','partially_received') %}<td>{% if i.quantity_ordered>i.quantity_received %}<input type="number" class="form-control receive-qty" data-item-id="{{ i.id }}" min="0" max="{{ i.quantity_ordered-i.quantity_received }}" value="0" step="1" aria-label="Receive {{ i.product_name }}">{% else %}Complete{% endif %}</td>{% endif %}</tr>{% endfor %}
+</tbody></table></div>
+{% if order.notes %}<p style="margin-top:14px"><strong>Notes:</strong> {{ order.notes }}</p>{% endif %}
+<div style="margin-top:18px">
+{% if order.status=='draft' %}<button id="orderBtn" class="btn btn-primary" onclick="markOrdered()">Mark as ordered</button><p style="color:var(--muted);margin-top:8px">No inventory is added until stock is received.</p>{% endif %}
+{% if order.status in ('ordered','partially_received') %}<button id="receiveBtn" class="btn btn-primary" onclick="receiveStock()">Confirm received quantities</button><p style="color:var(--muted);margin-top:8px">Only the quantities entered above will be added to stock. Do not resubmit a new receipt for the same physical delivery.</p>{% endif %}
+<p id="poError" style="color:var(--red);margin-top:10px"></p></div></div>
+<div class="card"><div class="card-header"><span class="card-title">Receiving history</span></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Receipt</th><th>Product</th><th>Quantity added</th></tr></thead><tbody>
+{% for r in receipts %}<tr><td>{{ r.created_at }}</td><td>#{{ r.id }}</td><td>{{ r.product_name }}</td><td>+{{ r.quantity }}</td></tr>
+{% else %}<tr><td colspan="4" class="empty-state">No stock received yet.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}
+{% block scripts %}<script>
+const orderId={{ order.id }};
+let receiptKey=crypto.randomUUID().replaceAll('-','');
+async function markOrdered(){const btn=document.getElementById('orderBtn');btn.disabled=true;try{const res=await fetch('/purchase-orders/'+orderId+'/order',{method:'POST'});const data=await res.json();if(!res.ok)throw Error(data.error||'Unable to mark ordered');location.reload()}catch(e){document.getElementById('poError').textContent=e.message;btn.disabled=false}}
+async function receiveStock(){const btn=document.getElementById('receiveBtn');btn.disabled=true;const items=[...document.querySelectorAll('.receive-qty')].map(el=>({po_item_id:Number(el.dataset.itemId),quantity:Number(el.value)})).filter(x=>x.quantity!==0);
+try{if(!items.length)throw Error('Enter at least one quantity to receive.');
+const res=await fetch('/purchase-orders/'+orderId+'/receive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idempotency_key:receiptKey,items})});
+const data=await res.json();if(!res.ok)throw Error(data.error||'Unable to receive items');location.reload();
+}catch(e){document.getElementById('poError').textContent=e.message;btn.disabled=false}}
+</script>{% endblock %}

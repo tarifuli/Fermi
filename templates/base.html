@@ -130,6 +130,37 @@
   @media(max-width:900px) { .stats-grid { grid-template-columns:1fr 1fr; } .grid-2,.grid-3 { grid-template-columns:1fr; } }
 </style>
 {% block extra_styles %}{% endblock %}
+<meta name="csrf-token" content="{{ csrf_token }}">
+<script>
+(function () {
+  const originalFetch = window.fetch;
+  window.fetch = function (input, init) {
+    init = init || {};
+    const method = (init.method || (input && input.method) || 'GET').toUpperCase();
+    if (['POST','PUT','PATCH','DELETE'].includes(method)) {
+      const target = typeof input === 'string' ? input : input.url;
+      const url = new URL(target, window.location.href);
+      if (url.origin === window.location.origin) {
+        const headers = new Headers(init.headers || (input instanceof Request ? input.headers : undefined));
+        headers.set('X-CSRF-Token', document.querySelector('meta[name="csrf-token"]').content);
+        init = Object.assign({}, init, {headers: headers});
+      }
+    }
+    return originalFetch.call(this, input, init);
+  };
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('form').forEach(function (form) {
+      const method = (form.getAttribute('method') || 'GET').toUpperCase();
+      if (method !== 'POST' || form.querySelector('input[name="_csrf_token"]')) return;
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = '_csrf_token';
+      input.value = document.querySelector('meta[name="csrf-token"]').content;
+      form.appendChild(input);
+    });
+  });
+})();
+</script>
 </head>
 <body>
 
@@ -143,10 +174,26 @@
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
     Dashboard
   </a>
+  <a href="/analytics" class="nav-item {% if request.path=='/analytics' %}active{% endif %}">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3v18h18M7 16l4-5 3 3 6-8"/></svg>
+    Sales Analytics
+  </a>
   <div class="nav-section">Business</div>
+  <a href="/suppliers" class="nav-item {% if request.path.startswith('/suppliers') %}active{% endif %}">Suppliers</a>
+  <a href="/purchase-orders" class="nav-item {% if request.path.startswith('/purchase-orders') %}active{% endif %}">Purchase Orders</a>
+  <a href="/returns" class="nav-item {% if request.path.startswith('/returns') %}active{% endif %}">Returns &amp; Refunds</a>
+  <a href="/business/settings" class="nav-item {% if request.path=='/business/settings' %}active{% endif %}">Business Settings</a>
   <a href="/products" class="nav-item {% if '/products' in request.path %}active{% endif %}">
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
     Inventory
+  </a>
+  <a href="/customers" class="nav-item {% if '/customers' in request.path %}active{% endif %}">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m20 0v-2a4 4 0 00-3-3.87M9 11a4 4 0 100-8 4 4 0 000 8zm8-7.87a4 4 0 010 7.75"/></svg>
+    Customers
+  </a>
+  <a href="/pos" class="nav-item {% if request.path=='/pos' %}active{% endif %}">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h2l2 12h12l2-9H6M9 20h.01M18 20h.01M9 20a1 1 0 110 2 1 1 0 010-2zm9 0a1 1 0 110 2 1 1 0 010-2z"/></svg>
+    Point of Sale
   </a>
   <a href="/invoices" class="nav-item {% if '/invoices' in request.path %}active{% endif %}">
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>

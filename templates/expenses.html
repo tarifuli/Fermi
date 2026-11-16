@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Expenses — Fermi{% endblock %}
+{% block topbar_title %}Expenses{% endblock %}
+{% block extra_styles %}<style>
+.expense-layout{display:grid;grid-template-columns:minmax(280px,350px) minmax(0,1fr);gap:22px}
+.expense-form label{display:block;font-size:13px;font-weight:700;margin:15px 0 6px;color:var(--navy)}
+.expense-form input,.expense-form select{width:100%;padding:12px;border:1px solid var(--border);border-radius:9px;font:inherit}
+.expense-form input:focus,.expense-form select:focus{outline:2px solid var(--blue)}
+.expense-form button{margin-top:20px;width:100%}
+@media(max-width:800px){.expense-layout{grid-template-columns:1fr}}
+</style>{% endblock %}
+{% block content %}
+<div class="page-header"><div><h1 class="page-title">Expenses & operating balance</h1><p style="color:var(--muted);font-size:13px;margin-top:6px">Record business costs and compare them with paid invoice revenue.</p></div></div>
+<div class="stats-grid" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+<div class="stat-card"><div class="stat-label">Paid invoice revenue</div><div class="stat-value">৳{{ "{:,.2f}".format(paid_revenue) }}</div></div>
+<div class="stat-card"><div class="stat-label">Recorded expenses</div><div class="stat-value">৳{{ "{:,.2f}".format(total_expenses) }}</div></div>
+<div class="stat-card"><div class="stat-label">Operating balance</div><div class="stat-value">৳{{ "{:,.2f}".format(operating_balance) }}</div></div>
+</div>
+<p style="color:var(--muted);font-size:12px;margin:12px 0 22px">Operating balance = paid invoice revenue − recorded expenses. This is not accounting net profit; it excludes product cost of goods sold, taxes, returns and unrecorded costs.</p>
+<div class="expense-layout">
+<section class="card" style="padding:24px"><h2 class="card-title">Add an expense</h2><form method="post" action="{{ url_for('add_expense') }}" class="expense-form">
+<label for="desc">Description</label><input id="desc" name="description" maxlength="200" required placeholder="e.g. Shop rent">
+<label for="cat">Category</label><select id="cat" name="category" required>{% for c in ['Rent','Utilities','Supplies','Salary','Transport','Marketing','Other'] %}<option>{{ c }}</option>{% endfor %}</select>
+<label for="amount">Amount (BDT)</label><input id="amount" name="amount" type="number" min="0.01" step="0.01" max="999999999999.99" required placeholder="0.00">
+<label for="expenseDate">Expense date</label><input id="expenseDate" name="expense_date" type="date" required>
+<button class="btn btn-primary" type="submit">+ Save expense</button></form></section>
+<section class="card"><div class="card-header"><h2 class="card-title">Expense history</h2></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Amount</th><th></th></tr></thead><tbody>
+{% for expense in expenses %}<tr><td>{{ expense.expense_date }}</td><td>{{ expense.description }}</td><td>{{ expense.category }}</td><td>৳{{ "{:,.2f}".format(expense.amount) }}</td><td><form method="post" action="{{ url_for('delete_expense', expense_id=expense.id) }}" onsubmit="return confirm('Delete this expense?')"><button type="submit" class="btn btn-ghost btn-sm">Delete</button></form></td></tr>{% else %}<tr><td colspan="5" style="padding:30px;text-align:center;color:var(--muted)">No expenses recorded yet.</td></tr>{% endfor %}
+</tbody></table></div></section></div>
+{% endblock %}
+{% block scripts %}<script>document.getElementById('expenseDate').value=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);</script>{% endblock %}

@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Replenishment Planning — Fermi{% endblock %}
+{% block topbar_title %}Inventory Replenishment{% endblock %}
+{% block content %}
+<div class="page-header"><div><div class="page-title">Stock replenishment planner</div><p style="color:var(--muted);margin-top:8px">Review estimated stock needs before creating a supplier purchase order.</p></div><a class="btn btn-ghost" href="{{ url_for('products') }}">Back to inventory</a></div>
+<div class="card" style="margin-bottom:18px">
+<div class="card-header"><span class="card-title">Demand planning</span></div>
+<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+<label for="planningDays">Sales history</label>
+<select class="form-control" id="planningDays" style="max-width:150px"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option></select>
+<button class="btn btn-ghost" type="button" id="refreshPlan">Refresh estimates</button>
+</div>
+<p style="margin-top:12px;color:var(--muted);font-size:13px">Suggestions use paid sales and a 14-day planning horizon, with your existing low-stock threshold as a minimum. They do not account for lead times, seasonality, returns, or incoming purchase orders.</p>
+</div>
+<div class="card">
+<div class="card-header"><span class="card-title">Suggested replenishment</span></div>
+<p id="planStatus" role="status">Loading suggestions…</p>
+<div class="table-wrap"><table><thead><tr><th>Include</th><th>Product</th><th>Priority</th><th>Stock</th><th>Units sold</th><th>Coverage</th><th>Suggested</th><th>Order quantity</th><th>Unit purchase cost (BDT)</th></tr></thead><tbody id="planRows"></tbody></table></div>
+</div>
+<div class="card" style="margin-top:18px">
+<div class="card-header"><span class="card-title">Create a draft purchase order</span></div>
+{% if suppliers %}
+<div class="form-group"><label class="form-label" for="planSupplier">Supplier</label><select id="planSupplier" class="form-control">{% for supplier in suppliers %}<option value="{{ supplier.id }}">{{ supplier.name }}</option>{% endfor %}</select></div>
+<p style="color:var(--muted);margin-bottom:12px">Confirm quantities and enter actual purchase costs. The draft will not receive stock or place an external order.</p>
+<button id="createDraft" type="button" class="btn btn-primary">Create draft from selected products</button>
+{% else %}
+<p>No supplier is registered yet. <a href="/suppliers">Add a supplier</a> to create a purchase order.</p>
+{% endif %}
+<p id="draftStatus" role="status" style="margin-top:12px"></p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const planRows=document.getElementById('planRows');
+const planStatus=document.getElementById('planStatus');
+const draftStatus=document.getElementById('draftStatus');
+async function loadPlan(){
+  planStatus.textContent='Loading suggestions…';planRows.replaceChildren();
+  try{
+    const response=await fetch('/inventory/replenishment?days='+encodeURIComponent(document.getElementById('planningDays').value));
+    const data=await response.json();if(!response.ok)throw Error(data.error||'Unable to load recommendations');
+    if(!data.recommendations.length){planStatus.textContent='No replenishment recommended for this period.';return;}
+    planStatus.textContent=data.recommendations.length+' product(s) recommended · business threshold: '+data.threshold;
+    for(const item of data.recommendations){
+      const tr=document.createElement('tr');tr.dataset.productId=item.product_id;
+      const cell=(value)=>{const td=document.createElement('td');td.textContent=String(value);tr.appendChild(td);return td;};
+      const select=document.createElement('input');select.type='checkbox';select.checked=true;select.className='plan-select';select.setAttribute('aria-label','Include '+item.name);
+      const td=document.createElement('td');td.appendChild(select);tr.appendChild(td);
+      cell(item.name+' ('+item.sku+')');cell(item.priority.replaceAll('_',' '));cell(item.stock);cell(item.units_sold);
+      cell(item.estimated_coverage_days===null?'No observed sales':item.estimated_coverage_days+' days');cell(item.suggested_order_quantity);
+      const quantity=document.createElement('input');quantity.type='number';quantity.min='1';quantity.max='100000';quantity.step='1';quantity.value=String(Math.min(item.suggested_order_quantity,100000));quantity.className='form-control plan-quantity';quantity.style.maxWidth='105px';quantity.setAttribute('aria-label','Order quantity for '+item.name);
+      const qtyCell=document.createElement('td');qtyCell.appendChild(quantity);tr.appendChild(qtyCell);
+      const cost=document.createElement('input');cost.type='number';cost.min='0';cost.max='100000000';cost.step='0.01';cost.placeholder='Required';cost.className='form-control plan-cost';cost.style.maxWidth='130px';cost.setAttribute('aria-label','Purchase cost for '+item.name);
+      const costCell=document.createElement('td');costCell.appendChild(cost);tr.appendChild(costCell);planRows.appendChild(tr);
+    }
+  }catch(err){planStatus.textContent=err.message;}
+}
+document.getElementById('refreshPlan').addEventListener('click',loadPlan);
+document.getElementById('planningDays').addEventListener('change',loadPlan);
+document.getElementById('createDraft')?.addEventListener('click',async()=>{
+  const button=document.getElementById('createDraft');
+  const rows=[...planRows.querySelectorAll('tr')].filter(r=>r.querySelector('.plan-select').checked);
+  if(!rows.length){draftStatus.textContent='Select at least one product.';return;}
+  if(rows.length>100){draftStatus.textContent='Select at most 100 products.';return;}
+  const items=[];
+  for(const row of rows){
+    const qty=Number(row.querySelector('.plan-quantity').value);
+    const rawCost=row.querySelector('.plan-cost').value;
+    if(!Number.isInteger(qty)||qty<1||qty>100000||rawCost===''||!/^\\d+(?:\\.\\d{1,2})?$/.test(rawCost)||Number(rawCost)>100000000){
+      draftStatus.textContent='Enter valid quantities and purchase costs (maximum two decimal places) for all selected products.';return;
+    }
+    items.push({product_id:Number(row.dataset.productId),quantity:qty,unit_cost:rawCost});
+  }
+  button.disabled=true;draftStatus.textContent='Creating draft…';
+  try{
+    const response=await fetch('/purchase-orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({supplier_id:Number(document.getElementById('planSupplier').value),notes:'Draft prepared from replenishment planner; review before ordering.',items})});
+    const result=await response.json();if(!response.ok)throw Error(result.error||'Could not create draft');
+    window.location.assign('/purchase-orders/'+result.order_id);
+  }catch(err){draftStatus.textContent=err.message;button.disabled=false;}
+});
+loadPlan();
+</script>
+{% endblock %}

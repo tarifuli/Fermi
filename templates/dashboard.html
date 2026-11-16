@@ -17,17 +17,62 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-header">
-  <div>
-    <div class="page-title">Good day, Tarif 👋</div>
-    <div style="font-size:13px;color:var(--muted);margin-top:2px;">Here's your business overview</div>
+<div class="page-header" style="gap:12px;flex-wrap:wrap">
+  <div><div class="page-title">Good day, {{ session.get('user_name', 'there') }} 👋</div>
+  <div style="font-size:13px;color:var(--muted);margin-top:2px">Here's your business overview</div></div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap">
+    <a href="{{ url_for('onboarding.business_settings') if has_business else url_for('business_setup') }}" class="btn btn-primary" id="dashboardBusinessSettings">{{ 'Business Settings' if has_business else 'Set Up Business' }}</a>
+    {% if has_business %}<a href="/invoices/new" class="btn btn-ghost">New Invoice</a>{% endif %}
   </div>
-  <a href="/invoices/new" class="btn btn-primary">
-    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-    New Invoice
-  </a>
 </div>
-
+{% if not has_business %}
+<section class="card" style="margin-bottom:20px;border:1px solid var(--sky);background:#f6faff">
+  <div class="card-title" style="font-size:18px;margin-bottom:8px">Welcome to Fermi — let's set up your business</div>
+  <p style="font-size:13px;color:var(--muted);margin-bottom:14px">You can explore the dashboard first, or create your business profile now to start managing products and sales.</p>
+  <button type="button" class="btn btn-primary" id="openSetupDialog">Set up my business</button>
+  <a href="{{ url_for('business_setup') }}" class="btn btn-ghost">Go directly to setup</a>
+</section>
+<div id="businessSetupDialog" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="setupDialogTitle" aria-hidden="true">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header"><h2 class="modal-title" id="setupDialogTitle">Set up your business</h2><button type="button" class="modal-close" id="closeSetupDialog" aria-label="Close">×</button></div>
+    <p style="font-size:14px;line-height:1.6;color:var(--muted);margin-bottom:20px">Create your private business profile, then add your first product, configure stock alerts, and make your first sale. You can return to the dashboard at any time.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><a class="btn btn-primary" href="{{ url_for('business_setup') }}">Create business profile</a><button type="button" class="btn btn-ghost" id="laterSetupDialog">I'll do this later</button></div>
+  </div>
+</div>
+{% else %}
+{% if onboarding.completed < onboarding.total %}
+<section class="card" style="margin-bottom:20px;border:1px solid var(--sky)" aria-label="Business setup progress" id="dashboardOnboarding">
+  <div class="card-header" style="gap:10px;flex-wrap:wrap"><strong style="font-size:16px">Finish setting up your business — checklist</strong><span style="font-size:13px;color:var(--muted)">{{ onboarding.completed }} of {{ onboarding.total }} completed{% if onboarding.completed == onboarding.total %} — All set!{% endif %}</span></div>
+  <div style="height:9px;background:var(--sky);border-radius:20px;overflow:hidden;margin-bottom:16px" role="progressbar" aria-label="Business setup progress" aria-valuemin="0" aria-valuemax="{{ onboarding.total }}" aria-valuenow="{{ onboarding.completed }}"><div style="height:100%;width:{{ onboarding.completed / onboarding.total * 100 if onboarding.total else 0 }}%;background:var(--teal)"></div></div>
+  {% for step in onboarding.steps %}
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--border)">
+    <span style="font-size:13px"><span aria-hidden="true">{{ '✓' if step.done else '○' }}</span> {{ step.title }}</span>
+    <a href="{{ step.url }}" style="font-size:12px;white-space:nowrap">{{ 'Review' if step.done else 'Complete step' }} →</a>
+  </div>
+  {% endfor %}
+  <p style="font-size:12px;color:var(--muted);margin-top:12px">Checklist updates automatically when you save business settings, add products, or create an invoice. Refresh the dashboard to see the latest progress.</p>
+  
+</section>
+{% endif %}
+{% endif %}
+{% if has_business %}
+<section class="card" style="margin-bottom:20px" id="actionCenter" aria-label="Business action center">
+  <div class="card-header" style="gap:12px;flex-wrap:wrap"><span class="card-title">Action center · {{ action_alerts|length }} active alerts</span><a href="/inventory/replenishment/plan" class="btn btn-ghost btn-sm">Stock planner</a></div>
+  {% if action_alerts %}
+  <div style="display:grid;gap:10px">
+  {% for alert in action_alerts %}
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:12px;border:1px solid var(--border);border-radius:8px">
+    <div><strong>{{ alert.count }} {{ alert.title|lower }}</strong><div style="font-size:12px;color:var(--muted);margin-top:3px">{{ alert.detail }}{% if alert.count > 3 and alert.kind in ('out_of_stock','low_stock') %} and more{% endif %}</div></div>
+    <a class="btn btn-ghost btn-sm" href="{{ alert.url }}">{{ alert.action }}</a>
+  </div>
+  {% endfor %}
+  </div>
+  {% else %}
+  <p style="font-size:13px;color:var(--muted)">You're all caught up. No stock, invoice, or incoming-order alerts right now.</p>
+  {% endif %}
+  <p style="font-size:12px;color:var(--muted);margin-top:12px">Alerts are calculated from current business data each time the dashboard loads; they are not email or push notifications.</p>
+</section>
+{% endif %}
 <!-- Stats -->
 <div class="stats-grid">
   <div class="stat-card">
@@ -165,4 +210,14 @@ new Chart(ctx, {
   }
 });
 </script>
+{% if not has_business %}
+<script>
+(()=>{const dialog=document.getElementById('businessSetupDialog'),open=document.getElementById('openSetupDialog'),close=document.getElementById('closeSetupDialog'),later=document.getElementById('laterSetupDialog');if(!dialog||!open)return;
+const show=()=>{dialog.classList.add('open');dialog.setAttribute('aria-hidden','false');close.focus()};
+const hide=()=>{dialog.classList.remove('open');dialog.setAttribute('aria-hidden','true');open.focus()};
+open.addEventListener('click',show);close.addEventListener('click',hide);later.addEventListener('click',hide);
+dialog.addEventListener('click',e=>{if(e.target===dialog)hide()});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&dialog.classList.contains('open'))hide()});
+})();
+</script>
+{% endif %}
 {% endblock %}

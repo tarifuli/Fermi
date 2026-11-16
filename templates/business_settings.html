@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Business Settings — Fermi{% endblock %}
+{% block topbar_title %}Business Settings{% endblock %}
+{% block content %}
+<div class="page-header"><div><div class="page-title">Business settings</div><p style="color:var(--muted);font-size:13px;margin-top:6px">Manage your business identity and inventory alerts.</p></div><a href="/business/profile" class="btn btn-ghost">Onboarding guide</a></div>
+<div style="margin-bottom:16px"><a class="btn btn-ghost" href="/business/team">Manage team & permissions</a></div>
+<div class="grid-2">
+<section class="card"><div class="card-header"><h2 class="card-title">Business profile</h2></div>
+<form id="settingsForm">
+<div class="form-group"><label class="form-label" for="bizName">Business name</label><input id="bizName" class="form-control" required maxlength="120" value="{{ business.name }}"></div>
+<div class="form-group"><label class="form-label" for="bizEmail">Contact email</label><input id="bizEmail" class="form-control" type="email" maxlength="254" value="{{ business.contact_email or '' }}"></div>
+<div class="form-group"><label class="form-label" for="bizPhone">Contact phone</label><input id="bizPhone" class="form-control" maxlength="40" value="{{ business.contact_phone or '' }}"></div>
+<div class="form-group"><label class="form-label" for="bizAddress">Business address</label><textarea id="bizAddress" class="form-control" maxlength="500" rows="3">{{ business.address or '' }}</textarea></div>
+<div class="form-group"><label class="form-label" for="bizThreshold">Low-stock alert threshold (units)</label><input id="bizThreshold" class="form-control" type="number" min="0" max="100000000" step="1" value="{{ threshold }}" required></div>
+<button id="saveSettings" class="btn btn-primary" type="submit">Save business settings</button><p id="settingsMessage" role="status" style="font-size:13px;margin-top:12px"></p>
+</form></section>
+<section class="card"><h2 class="card-title">Getting started</h2><p style="margin:12px 0;color:var(--muted);font-size:13px">{{ progress.completed }} of {{ progress.total }} steps completed automatically from your business data.</p>
+<div style="height:9px;background:var(--sky);border-radius:20px;overflow:hidden;margin-bottom:16px"><div style="height:100%;width:{{ progress.completed / progress.total * 100 if progress.total else 0 }}%;background:var(--teal)"></div></div>
+{% for step in progress.steps %}<div style="padding:12px 0;border-bottom:1px solid var(--border)"><span aria-hidden="true">{{ '✓' if step.done else '○' }}</span> <strong style="font-size:13px">{{ step.title }}</strong> <a href="{{ step.url }}" style="display:block;font-size:12px;margin:6px 0 0 23px">{{ 'Review' if step.done else 'Complete step' }} →</a></div>{% endfor %}
+</section></div>
+<section class="card" style="margin-top:18px;max-width:720px"><div class="card-header"><h2 class="card-title">Account security · Change password</h2></div><p style="font-size:13px;color:var(--muted)">Requires your current password. This session signs out after a successful change; other existing sessions are not automatically revoked.</p>
+<label class="form-label" for="oldPassword">Current password</label><input class="form-control" id="oldPassword" type="password" autocomplete="current-password">
+<label class="form-label" for="newPassword">New password (at least 12 characters)</label><input class="form-control" id="newPassword" type="password" minlength="12" maxlength="256" autocomplete="new-password">
+<button id="changePassword" class="btn btn-primary" type="button" style="margin-top:12px">Change password</button><p id="passwordMessage" role="status" style="margin-top:8px"></p></section>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('changePassword').addEventListener('click',async()=>{
+ const msg=document.getElementById('passwordMessage');msg.textContent='';
+ try{
+ const response=await fetch('/account/password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({current_password:document.getElementById('oldPassword').value,new_password:document.getElementById('newPassword').value})});
+ const data=await response.json();if(!response.ok)throw Error(data.error||'Password change failed');
+ location.assign('/login');
+ }catch(e){msg.textContent=e.message}
+});
+document.getElementById('settingsForm').addEventListener('submit',async e=>{
+ e.preventDefault();const button=document.getElementById('saveSettings'),message=document.getElementById('settingsMessage');button.disabled=true;message.textContent='';
+ try{const response=await fetch('/business/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+ name:document.getElementById('bizName').value,contact_email:document.getElementById('bizEmail').value,contact_phone:document.getElementById('bizPhone').value,address:document.getElementById('bizAddress').value,low_stock_threshold:Number(document.getElementById('bizThreshold').value)
+ })});const data=await response.json();if(!response.ok||!data.success)throw Error(data.error||'Unable to save settings');message.style.color='var(--teal)';message.textContent='Saved successfully. Refresh to update your checklist.';}
+ catch(error){message.style.color='var(--red)';message.textContent=error.message}finally{button.disabled=false}
+});
+</script>
+{% endblock %}

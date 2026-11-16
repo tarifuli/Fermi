@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Team & Permissions — Fermi{% endblock %}
+{% block topbar_title %}Team & Permissions{% endblock %}
+{% block content %}
+<div class="page-header"><div class="page-title">Team & permissions</div><a class="btn btn-ghost" href="/business/settings">Business settings</a></div>
+<p style="margin-bottom:16px;color:var(--muted)">Business: {{ business.name }} · Your role: {{ role|title }}. Owners manage members; staff can operate the business; viewers have read-only access.</p>
+<div class="card"><div class="card-header"><span class="card-title">Current members</span></div>
+<div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Actions</th></tr></thead><tbody>
+{% for member in members %}
+<tr><td>{{ member.name }}</td><td>{{ member.email }}</td><td>{{ member.role|title }}</td><td>
+{% if role == 'owner' %}
+<select aria-label="Role for {{ member.email }}" id="role-{{ member.id }}" class="form-control" style="display:inline-block;width:120px">
+{% for value in ['owner','staff','viewer'] %}<option value="{{ value }}" {% if value==member.role %}selected{% endif %}>{{ value|title }}</option>{% endfor %}
+</select>
+<button type="button" class="btn btn-ghost btn-sm" onclick="updateMember({{ member.id }})">Save role</button>
+<button type="button" class="btn btn-danger btn-sm" onclick="removeMember({{ member.id }})">Remove</button>
+{% else %}—{% endif %}
+</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% if role == 'owner' %}
+<div class="card" style="margin-top:18px"><div class="card-header"><span class="card-title">Add an existing Fermi user</span></div>
+<p style="color:var(--muted);font-size:13px;margin-bottom:12px">The person must already have a Fermi account. Adding them grants access immediately; no invitation email is sent.</p>
+<label class="form-label" for="memberEmail">Registered email</label><input id="memberEmail" type="email" maxlength="254" class="form-control" placeholder="person@example.com">
+<label class="form-label" for="memberRole">Role</label><select id="memberRole" class="form-control"><option value="staff">Staff — operational access</option><option value="viewer">Viewer — read only</option></select>
+<button class="btn btn-primary" type="button" id="addMember" style="margin-top:12px">Add member</button></div>
+{% endif %}
+<p id="teamMessage" role="status" style="margin-top:12px"></p>
+{% endblock %}
+{% block scripts %}
+<script>
+async function teamRequest(url,method,data){
+ const response=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:data?JSON.stringify(data):undefined});
+ const result=await response.json();if(!response.ok)throw Error(result.error||'Unable to save');location.reload();
+}
+function showError(e){document.getElementById('teamMessage').textContent=e.message}
+async function updateMember(id){try{await teamRequest('/business/team/members/'+id,'PATCH',{role:document.getElementById('role-'+id).value})}catch(e){showError(e)}}
+async function removeMember(id){if(!confirm('Remove this member from the business?'))return;try{await teamRequest('/business/team/members/'+id,'DELETE')}catch(e){showError(e)}}
+document.getElementById('addMember')?.addEventListener('click',async()=>{try{await teamRequest('/business/team/members','POST',{email:document.getElementById('memberEmail').value,role:document.getElementById('memberRole').value})}catch(e){showError(e)}});
+</script>
+{% endblock %}
