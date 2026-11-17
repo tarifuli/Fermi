@@ -19,58 +19,6 @@ app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax', SESSION_COOKIE_SECURE=bool(os.environ.get('VERCEL')))
 app.config.update(PERMANENT_SESSION_LIFETIME=timedelta(hours=12), MAX_CONTENT_LENGTH=2 * 1024 * 1024)
 
-
-# Temporary, time-limited database identity verification; remove after verification.
-@app.before_request
-def temporary_database_identity():
-    if request.path != '/_ops/database-identity':
-        return None
-    import time
-    from db_backend import get_db as diagnostic_connect
-    def reply(body, status):
-        response = jsonify(body)
-        response.status_code = status
-        response.headers['Cache-Control'] = 'private, no-store, max-age=0'
-        response.headers['X-Robots-Tag'] = 'noindex, nofollow'
-        return response
-    supplied = request.headers.get('Authorization', '')
-    if (request.method != 'GET' or time.time() >= 1794935623
-            or len(supplied) > 128
-            or not secrets.compare_digest(
-                hashlib.sha256(supplied.encode()).hexdigest(),
-                'aa8b72a15c1112e2c8cd180d4216f746079d0294c6d4641fe2ff2cf82a96837a')):
-        return reply({'error': 'Not found'}, 404)
-    try:
-        # This is the application's existing adapter; never initialize schemas.
-        connection = diagnostic_connect()
-        try:
-            connection.conn.read_only = True
-            with connection:
-                connection.conn.execute("SET LOCAL statement_timeout = '5s'")
-                row = connection.conn.execute(
-                    "SELECT current_database() AS database_name, "
-                    "current_setting('transaction_read_only') AS read_only"
-                ).fetchone()
-                host = connection.conn.info.host
-                result = {
-                    'connected': True,
-                    'database': row['database_name'],
-                    'host': host,
-                    'read_only': row['read_only'],
-                    'environment': os.environ.get('VERCEL_ENV'),
-                    'deployment': os.environ.get('VERCEL_URL'),
-                    'commit': os.environ.get('VERCEL_GIT_COMMIT_SHA')
-                }
-            return reply(result, 200)
-        finally:
-            if hasattr(connection, 'conn'):
-                connection.conn.close()
-            else:
-                connection.close()
-    except Exception:
-        # Connection exceptions can contain credentials; never log or return them.
-        return reply({'connected': False, 'error': 'Database verification failed'}, 503)
-
 @app.after_request
 def security_response_headers(response):
     """Safe baseline browser headers without changing application routes."""
