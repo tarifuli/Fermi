@@ -8,7 +8,6 @@ from reportlab.lib import colors
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-import anthropic
 import io
 from decimal import Decimal
 
@@ -80,7 +79,6 @@ def reject_cross_site_writes():
 
 
 DATABASE = os.environ.get('DATABASE_PATH', 'fermi.db')
-ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', 'YOUR_API_KEY_HERE')
 
 @app.context_processor
 def inject_now():
@@ -1779,47 +1777,33 @@ def chatbot():
 @app.route('/api/chat', methods=['POST'])
 @login_required
 def api_chat():
+    from fermi_ai import local_insight
     data = request.get_json(silent=True)
-    if not isinstance(data, dict) or not isinstance(data.get('message'), str) or not 1 <= len(data['message'].strip()) <= 4000:
-        return jsonify({'success': False, 'error': 'Message must be between 1 and 4,000 characters.'}), 400
-    user_message = data['message'].strip()
+    if not isinstance(data, dict) or set(data) != {'message'} or not isinstance(data.get('message'), str) or not 1 <= len(data['message'].strip()) <= 4000:
+        return jsonify({'success': False, 'error': 'Enter a question of 1 to 4,000 characters.'}), 400
     business_id, error = require_business()
     if error:
         return error
-    stats    = get_dashboard_stats(business_id)
-    sales_7  = get_sales_data(7, business_id)
-    sales_30 = get_sales_data(30, business_id)
-    with get_db() as db:
-        all_products    = [dict(p) for p in db.execute('SELECT * FROM products WHERE business_id=? ORDER BY stock ASC', (business_id,)).fetchall()]
-        recent_invoices = [dict(i) for i in db.execute('SELECT * FROM invoices WHERE business_id=? ORDER BY created_at DESC LIMIT 10', (business_id,)).fetchall()]
-    low_stock = [p for p in all_products if p['stock'] < 20]
-    context = f"""You are Fermi AI, a business intelligence assistant for an SME in Bangladesh.
-You have access to REAL-TIME business data. Always answer based on this data.
+    reply = local_insight(data['message'].strip(), business_id, get_db, get_dashboard_stats, get_sales_data)
+    return jsonify({'success': True, 'reply': reply, 'source': 'local'})
 
-CURRENT BUSINESS DATA:
-Total Revenue (all time): BDT {stats['total_revenue']:,}
-Revenue This Month: BDT {stats['month_revenue']:,}
-Total Invoices: {stats['total_invoices']}
-Total Products: {stats['total_products']}
-Low Stock Alerts: {stats['low_stock']} products below 20 units
 
-TOP SELLING PRODUCTS (Last 7 Days): {json.dumps(sales_7, indent=2)}
-TOP SELLING PRODUCTS (Last 30 Days): {json.dumps(sales_30, indent=2)}
-DAILY REVENUE (Last 7 Days): {json.dumps(stats['daily'], indent=2)}
-LOW STOCK PRODUCTS: {json.dumps(low_stock, indent=2)}
-ALL PRODUCTS: {json.dumps(all_products, indent=2)}
-RECENT INVOICES: {json.dumps(recent_invoices, indent=2)}
-
-Instructions: Answer in a friendly professional tone. Cite specific numbers. Give actionable recommendations.
-Compare 7-day vs 30-day data when asked about trends. Respond in the same language the user uses."""
+@app.route('/api/chat/general', methods=['POST'])
+@login_required
+def api_chat_general():
+    from fermi_ai import TOPICS, public_advice, AdviceUnavailable
+    data = request.get_json(silent=True)
+    if (not isinstance(data, dict) or set(data) != {'topic', 'language'} or
+            not isinstance(data.get('topic'), str) or data['topic'] not in TOPICS or
+            data.get('language') not in ('en', 'bn')):
+        return jsonify({'success': False, 'error': 'Choose a listed topic and language. Free-text questions are kept local.'}), 400
     try:
-        client   = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        response = client.messages.create(model="claude-sonnet-4-20250514", max_tokens=800,
-                                          system=context, messages=[{"role":"user","content":user_message}])
-        return jsonify({'reply': response.content[0].text, 'success': True})
-    except Exception:
-        app.logger.exception('AI assistant request failed')
-        return jsonify({'reply': 'The assistant is temporarily unavailable. Please try again.', 'success': False}), 503
+        reply = public_advice(data['topic'], data['language'])
+    except AdviceUnavailable as exc:
+        return jsonify({'success': False, 'reply': str(exc)}), 503
+    response = jsonify({'success': True, 'reply': reply, 'source': 'gemini'})
+    response.headers['Cache-Control'] = 'private, no-store'
+    return response
 
 from purchase_orders import po_blueprint
 app.register_blueprint(po_blueprint)

@@ -49,7 +49,7 @@
       <div class="section-label">Sales Analysis</div>
       <button class="prompt-chip" onclick="sendPrompt('Which product sold the most in the last 7 days?')">📈 Best seller — last 7 days</button>
       <button class="prompt-chip" onclick="sendPrompt('Which product sold the most in the last 30 days?')">📊 Best seller — last 30 days</button>
-      <button class="prompt-chip" onclick="sendPrompt('Compare my sales performance: last 7 days vs last 30 days')">⚖️ 7-day vs 30-day comparison</button>
+      <button class="prompt-chip" onclick="sendPrompt('Give me a business summary')">⚖️ Business overview</button>
 
       <div class="section-label">Inventory</div>
       <button class="prompt-chip" onclick="sendPrompt('Which products are low on stock and need restocking?')">📦 Low stock alerts</button>
@@ -71,7 +71,7 @@
       <div class="ai-dot"></div>
       <div>
         <div class="chat-header-title">Fermi AI</div>
-        <div class="chat-header-sub">Trained on your real-time business data</div>
+        <div class="chat-header-sub">Private business insights · General advice with Gemini</div>
       </div>
     </div>
 
@@ -81,13 +81,26 @@
         <div class="msg-avatar">🤖</div>
         <div class="msg-bubble">
           <strong>Hello! I'm Fermi AI 👋</strong>
-          I have access to your real-time business data — invoices, sales, inventory, and revenue trends. Ask me anything about your business in English or Bengali!<br><br>
+          Your business questions are answered within Fermi using your own records. Typed questions and records are never sent to Gemini. For general education, choose a topic below; only a fixed topic prompt goes to Google.<br><br>
           Try: <em>"Which product sold most this week?"</em> or <em>"What should I restock?"</em>
         </div>
       </div>
     </div>
 
-    <div class="chat-input-area">
+    <section style="padding:12px 16px;border-top:1px solid var(--border)" aria-label="General business advice">
+<label for="general-topic">General business advice · Gemini</label>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+<select id="general-topic" class="form-control" style="width:auto">
+<option value="marketing">Marketing basics</option><option value="pricing">Pricing basics</option>
+<option value="inventory">Inventory planning</option><option value="cashflow">Cash-flow planning</option>
+<option value="service">Customer service</option><option value="security">Business security</option>
+</select>
+<select id="general-language" class="form-control" style="width:auto" aria-label="Advice language"><option value="en">English</option><option value="bn">বাংলা</option></select>
+<button class="btn btn-primary" id="general-submit" type="button" onclick="sendGeneral()">Get general advice</button>
+</div>
+<p style="font-size:12px;color:var(--muted);margin-top:6px">Google receives only the selected generic topic and language. No chat history or business records. Advice may be inaccurate and is not live web research.</p>
+</section>
+<div class="chat-input-area">
       <textarea class="chat-input" id="chat-input" placeholder="Ask about your sales, inventory, revenue..." rows="1"
         onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage()}"
         oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px'"></textarea>
@@ -109,14 +122,35 @@ function sendPrompt(text) {
 function appendMsg(role, text) {
   const container = document.getElementById('chat-messages');
   const div = document.createElement('div');
-  div.className = `msg ${role}`;
-  div.innerHTML = `
-    <div class="msg-avatar">${role === 'ai' ? '🤖' : '👤'}</div>
-    <div class="msg-bubble">${text.replace(/\n/g, '<br>')}</div>
-  `;
+  div.className = role === 'user' ? 'msg user' : 'msg ai';
+  const avatar = document.createElement('div');
+  avatar.className = 'msg-avatar';
+  avatar.textContent = role === 'user' ? '👤' : '🤖';
+  const bubble = document.createElement('div');
+  bubble.className = 'msg-bubble';
+  bubble.style.whiteSpace = 'pre-wrap';
+  bubble.textContent = text;
+  div.append(avatar, bubble);
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
   return div;
+}
+async function sendGeneral() {
+  const button = document.getElementById('general-submit');
+  button.disabled = true;
+  const topic = document.getElementById('general-topic');
+  const language = document.getElementById('general-language').value;
+  appendMsg('user', 'General advice: ' + topic.options[topic.selectedIndex].text);
+  try {
+    const response = await fetch('/api/chat/general', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({topic: topic.value, language})
+    });
+    const data = await response.json();
+    appendMsg('ai', (data.success ? 'Gemini · General education\n' : '') + (data.reply || data.error || 'Advice unavailable.'));
+  } catch (_) {
+    appendMsg('ai', 'General advice is unavailable. Please try later.');
+  } finally { button.disabled = false; }
 }
 
 function showTyping() {
@@ -155,10 +189,10 @@ async function sendMessage() {
     });
     const data = await res.json();
     removeTyping();
-    appendMsg('ai', data.reply || 'Sorry, I could not process that. Please check your API key in app.py.');
+    appendMsg('ai', data.reply || data.error || 'The assistant is temporarily unavailable.');
   } catch (e) {
     removeTyping();
-    appendMsg('ai', 'Connection error. Make sure the server is running.');
+    appendMsg('ai', 'Connection error. Please try again.');
   }
 }
 
