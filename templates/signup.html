@@ -11,7 +11,7 @@
 
   .auth-wrapper { display:grid; grid-template-columns:1fr 1fr; min-height:100vh; width:100%; }
 
-  .auth-left { background:#1F1633; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:60px 48px; }
+  .auth-left { background:#211832; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:60px 48px; }
   .auth-left-logo { font-family:'Playfair Display',serif; font-size:42px; color:#fff; letter-spacing:2px; margin-bottom:12px; }
   .auth-left-tag { font-size:15px; color:rgba(255,255,255,0.6); text-align:center; margin-bottom:48px; line-height:1.6; }
   .auth-stats { display:grid; grid-template-columns:1fr 1fr; gap:14px; width:100%; max-width:320px; }
@@ -21,13 +21,13 @@
 
   .auth-right { display:flex; align-items:center; justify-content:center; padding:48px 40px; background:#fff; overflow-y:auto; }
   .auth-card { width:100%; max-width:400px; }
-  .auth-title { font-size:26px; font-weight:700; color:#1F1633; margin-bottom:6px; }
+  .auth-title { font-size:26px; font-weight:700; color:#211832; margin-bottom:6px; }
   .auth-subtitle { font-size:14px; color:#746B83; margin-bottom:28px; }
 
   .form-group { margin-bottom:16px; }
   .form-label { display:block; font-size:12px; font-weight:600; color:#746B83; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px; }
-  .form-control { width:100%; padding:11px 14px; border:1.5px solid #E6DFEF; border-radius:8px; font-size:14px; font-family:'DM Sans',sans-serif; color:#1F1633; transition:border-color 0.15s; outline:none; }
-  .form-control:focus { border-color:#7C3AED; box-shadow:0 0 0 3px rgba(124,58,237,0.1); }
+  .form-control { width:100%; padding:11px 14px; border:1.5px solid #E6DFEF; border-radius:8px; font-size:14px; font-family:'DM Sans',sans-serif; color:#211832; transition:border-color 0.15s; outline:none; }
+  .form-control:focus { border-color:#7138EA; box-shadow:0 0 0 3px rgba(113,56,234,0.1); }
 
   .password-hint { font-size:11px; color:#746B83; margin-top:4px; }
 
@@ -35,7 +35,7 @@
   .btn-submit:hover { background:#0a5240; }
 
   .auth-switch { text-align:center; margin-top:20px; font-size:14px; color:#746B83; }
-  .auth-switch a { color:#7C3AED; font-weight:600; text-decoration:none; }
+  .auth-switch a { color:#7138EA; font-weight:600; text-decoration:none; }
   .auth-switch a:hover { text-decoration:underline; }
 
   .error-box { background:#FDEAEA; border:1px solid #F5B8B8; border-radius:8px; padding:11px 14px; font-size:13px; color:#B03A2E; margin-bottom:20px; }
@@ -48,20 +48,22 @@
     .auth-right { padding:40px 24px; }
   }
 
-/* Instagram-inspired Fermi branding */
-.auth-left { background:linear-gradient(145deg,#7C3AED 0%,#AD218B 53%,#DB2777 76%,#F97316 100%); }
+/* Electric Orchid Fermi branding */
+.auth-left { background:linear-gradient(145deg,#5423B2 0%,#7138EA 65%,#9462F2 100%); }
 .auth-left-logo { font-family:'DM Sans',sans-serif; font-weight:700; letter-spacing:-2px; font-size:56px; }
 .auth-left-tag,.auth-feature-text span,.auth-stat-label { color:#FFF; }
 .auth-feature,.auth-stat { background:rgba(40,12,70,.25); border:1px solid rgba(255,255,255,.22); }
 .auth-feature-icon { background:rgba(255,255,255,.15)!important; }
 .auth-right { background:#F8F7FC; }
 .auth-card { background:#FFF; padding:36px; border:1px solid #E6DFEF; border-radius:20px; box-shadow:0 16px 60px rgba(76,29,149,.08); }
-.btn-submit { background:#7C3AED; box-shadow:0 4px 14px rgba(124,58,237,.2); }
+.btn-submit { background:#7138EA; box-shadow:0 4px 14px rgba(113,56,234,.2); }
 .btn-submit:hover { background:#6D28D9; }
-.form-control:focus { border-color:#7C3AED; box-shadow:0 0 0 3px rgba(124,58,237,.12); }
+.form-control:focus { border-color:#7138EA; box-shadow:0 0 0 3px rgba(113,56,234,.12); }
 :where(a,button,input):focus-visible { outline:3px solid #A78BFA; outline-offset:3px; }
 @media(max-width:768px) { .auth-card { padding:28px 22px; } .auth-right { padding:24px 16px; } }
 
+.auth-left-logo { color:#D5F564; }
+.auth-feature-icon { color:#211832; background:#D5F564!important; }
 </style>
 </head>
 <body>

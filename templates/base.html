@@ -8,8 +8,8 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
   :root {
-    --navy:    #1F1633;
-    --blue:    #7C3AED;
+    --navy:    #211832;
+    --blue:    #7138EA;
     --sky:     #EDE5FF;
     --teal:    #0F6E56;
     --mint:    #E1F5EE;
@@ -19,7 +19,7 @@
     --rose:    #FDEAEA;
     --bg:      #F8F7FC;
     --white:   #FFFFFF;
-    --text:    #1F1633;
+    --text:    #211832;
     --muted:   #746B83;
     --border:  #E6DFEF;
     --radius:  10px;
@@ -105,7 +105,7 @@
   .form-group { margin-bottom:14px; }
   .form-label { display:block; font-size:12px; font-weight:600; color:var(--muted); margin-bottom:5px; text-transform:uppercase; letter-spacing:0.4px; }
   .form-control { width:100%; padding:9px 12px; border:1px solid var(--border); border-radius:7px; font-size:13px; font-family:'DM Sans',sans-serif; color:var(--text); background:var(--white); transition:border-color 0.15s; }
-  .form-control:focus { outline:none; border-color:var(--blue); box-shadow:0 0 0 3px rgba(124,58,237,0.1); }
+  .form-control:focus { outline:none; border-color:var(--blue); box-shadow:0 0 0 3px rgba(113,56,234,0.1); }
   select.form-control { cursor:pointer; }
 
   /* ── MODAL ── */
@@ -129,28 +129,34 @@
 
   @media(max-width:900px) { .stats-grid { grid-template-columns:1fr 1fr; } .grid-2,.grid-3 { grid-template-columns:1fr; } }
 
-/* Fermi sunset theme: vivid brand accents with calm data surfaces. */
-:root { --pink:#DB2777; --orange:#F97316; --brand-gradient:linear-gradient(135deg,#7C3AED 0%,#DB2777 62%,#F97316 100%); }
-.sidebar { background:linear-gradient(165deg,#32145F 0%,#482080 55%,#651D58 100%); }
+/* Fermi Electric Orchid theme: vivid brand accents with calm data surfaces. */
+:root { --lime:#D5F564; --brand-gradient:linear-gradient(135deg,#7138EA,#9462F2); }
+.sidebar { background:linear-gradient(165deg,#5423B2 0%,#7138EA 100%); }
 .sidebar-logo { position:relative; }
-.sidebar-logo::after { content:""; position:absolute; bottom:0; left:20px; right:20px; height:3px; border-radius:4px; background:var(--brand-gradient); }
+.sidebar-logo::after { content:""; position:absolute; bottom:0; left:20px; right:20px; height:3px; border-radius:4px; background:#D5F564; }
 .sidebar-logo h1 { font-family:'DM Sans',sans-serif; font-weight:700; letter-spacing:-.8px; font-size:28px; }
 .sidebar-logo span,.nav-section { color:#D8C9EE; }
 .nav-item { color:#E9DFF6; }
-.nav-item.active { background:linear-gradient(90deg,rgba(219,39,119,.45),rgba(124,58,237,.2)); border-left-color:#FB923C; }
-.topbar { border-top:3px solid #7C3AED; }
+.nav-item.active { background:linear-gradient(90deg,rgba(219,39,119,.45),rgba(113,56,234,.2)); border-left-color:#D5F564; }
+.topbar { border-top:3px solid #7138EA; }
 .card,.stat-card { box-shadow:0 3px 16px rgba(70,28,110,.045); }
-.stat-card { border-top:3px solid #7C3AED; }
-.stat-card:nth-child(2) { border-top-color:#DB2777; }
-.stat-card:nth-child(3) { border-top-color:#F97316; }
+.stat-card { border-top:3px solid #7138EA; }
+.stat-card:nth-child(2) { border-top-color:#D5F564; }
+.stat-card:nth-child(3) { border-top-color:#9462F2; }
 .stat-card:nth-child(4) { border-top-color:#A855F7; }
-.btn-primary { box-shadow:0 3px 8px rgba(124,58,237,.16); }
+.btn-primary { box-shadow:0 3px 8px rgba(113,56,234,.16); }
 .btn-primary:hover { background:#6D28D9; }
 .btn-ghost:hover { border-color:#C4B5FD; }
 .rank-bar-fill { background:var(--brand-gradient); }
 :where(a,button,input,select,textarea):focus-visible { outline:3px solid #A78BFA; outline-offset:3px; }
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none!important; } }
 
+</style>
+<style>
+.badge-blue { background:#D5F564; color:#211832; }
+.nav-item.active { color:#FFF; }
+.sidebar-logo h1 { color:#D5F564; }
+.stat-card:nth-child(2) .stat-icon { background:#F0F8DC; }
 </style>
 {% block extra_styles %}{% endblock %}
 <meta name="csrf-token" content="{{ csrf_token }}">
