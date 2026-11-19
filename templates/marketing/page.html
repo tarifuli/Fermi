@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ p.nav }} — Fermi | Small business, in focus</title>
+  <meta name="description" content="{{ p.intro }}">
+  <meta name="theme-color" content="#7C3AED">
+  <link rel="stylesheet" href="{{ url_for('static', filename='marketing/marketing.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='marketing/research.css') }}">
+  <script src="{{ url_for('static', filename='marketing/research.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='marketing/marketing.js') }}" defer></script>
+</head>
+<body data-page="{{ p.kind }}" {% if p.scenario %}data-scenario="{{ p.scenario }}"{% endif %}>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header"><a class="brand" href="{{ url_for('marketing.page_view', page='welcome') }}" aria-label="Fermi home"><span class="brand-mark" aria-hidden="true">f</span>fermi<span class="brand-period">.</span></a>
+  <button class="menu-button" aria-expanded="false" aria-controls="primary-nav">Menu</button>
+  <nav id="primary-nav" aria-label="Main navigation"><a href="{{ url_for('marketing.page_view', page='welcome') }}" {% if page=='challenges' %}aria-current="page"{% endif %}>The challenge</a><a href="{{ url_for('marketing.page_view', page='welcome') }}#solution" {% if page=='solutions' %}aria-current="page"{% endif %}>The solution</a><a href="{{ url_for('marketing.page_view', page='welcome') }}#why-fermi" {% if page=='why-fermi' %}aria-current="page"{% endif %}>Why Fermi</a><a href="{{ url_for('marketing.page_view', page='welcome') }}#industry">Industry &amp; impact</a><a class="nav-login" href="/login">Log in</a><a class="button small" href="/signup">Get started</a></nav>
+</header>
+<main id="main">
+{% include "marketing/hero.html" %}
+<div class="feature-ribbon"><div class="wrap"><span>Designed around your working day</span><b>Inventory</b><b>Point of sale</b><b>Invoicing</b><b>Business insights</b></div></div>
+{% if p.metrics %}{% include "marketing/research.html" %}{% endif %}
+{% include "marketing/editorial.html" %}
+{% include "marketing/experience.html" %}
+<section class="section wrap reveal benefit-section"><div><p class="eyebrow">THE BENEFIT</p><h2>{{ p.outcome }}</h2><p>Fermi helps you organise the work. Your experience and judgment guide what happens next.</p></div><ul class="benefit-list">{% for benefit in p.benefits %}<li><span aria-hidden="true">✓</span>{{ benefit }}</li>{% endfor %}</ul></section>
+<section class="section wrap explore-section"><div class="section-head"><p class="eyebrow">EXPLORE THE PLATFORM</p><h2>A closer look at your next step.</h2></div><div class="explore-grid">{% for slug in ['inventory','sales-and-invoices','business-insights'] %}<a class="explore-card {% if page==slug %}current{% endif %}" href="{{ url_for('marketing.page_view', page=slug) }}"><span class="explore-symbol" aria-hidden="true">{{ ['▤','▧','▥'][loop.index0] }}</span><h3>{{ pages[slug].nav }}</h3><p>{{ {'inventory':'Know what is available and what needs attention.','sales-and-invoices':'Bring checkout and its paper trail together.','business-insights':'Find useful perspective in everyday records.'}[slug] }}</p><span class="card-link">Explore {{ pages[slug].nav | lower }}</span></a>{% endfor %}</div></section>
+{% if p.metrics %}{% include "marketing/research_sources.html" %}{% endif %}
+<section class="wrap research-links"><p class="eyebrow">GO DEEPER</p><h2>The numbers. The needs. Our response.</h2><div>{% for slug in ['industry-in-numbers','inventory-economics','returns-and-trust','connected-operations'] %}<a href="{{ url_for('marketing.page_view', page=slug) }}" {% if page==slug %}aria-current="page"{% endif %}>{{ pages[slug].nav }}<span>Explore the detail</span></a>{% endfor %}</div></section>
+{% include "marketing/faq.html" %}
+{% include "marketing/cta.html" %}
+</main>
+<footer class="wrap"><div class="footer-top"><div><a class="brand" href="{{ url_for('marketing.page_view', page='welcome') }}"><span class="brand-mark" aria-hidden="true">f</span>fermi.</a><p>Small business. A clearer perspective.</p></div><nav aria-label="Explore all Fermi pages">{% for slug, item in pages.items() %}<a href="{{ url_for('marketing.page_view', page=slug) }}" {% if page==slug %}aria-current="page"{% endif %}>{{ item.nav }}</a>{% endfor %}</nav></div><div class="footer-bottom"><span>Fermi · Built around your everyday business.</span><span>Product demonstrations use sample data.</span><a href="#main">Back to top</a></div></footer>
+</body></html>
