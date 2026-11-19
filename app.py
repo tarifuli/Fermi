@@ -1831,6 +1831,10 @@ app.register_blueprint(returns_blueprint)
 from onboarding import onboarding_blueprint
 app.register_blueprint(onboarding_blueprint)
 
+# Public product pages are separate from authenticated business workflows.
+from marketing import marketing
+app.register_blueprint(marketing)
+
 if __name__ == '__main__':
     init_db()
     app.run(debug=os.environ.get('FERMI_DEBUG') == '1', port=int(os.environ.get('PORT', 5000)))
