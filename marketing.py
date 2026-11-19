@@ -12,6 +12,9 @@ PAGES = {
  'why-fermi': dict(nav='Why Fermi', eyebrow='THE REASON WE ARE BUILDING', title='Small businesses\ndeserve a clearer day.', intro='Fermi starts with a simple belief: business owners should be able to spend more time serving customers and less time piecing together information.', kind='purpose', label='Built for the working day', section='Practical tools. A deliberate purpose.', summary='We are building around the everyday relationship between products, sales and records—not a collection of features without a common purpose.', cards=[('Clarity over complexity', 'Bring the most useful information into view. Make the next task easier to understand, whether it is checking stock or finding an invoice.'), ('Continuity over disconnected tasks', 'Treat sales, stock, purchasing and returns as parts of the same business story. Give each step a consistent record.'), ('Progress through feedback', 'Fermi is evolving. Real use, careful testing and feedback should shape what improves next; no invented success statistics or promises.')], outcome='Build a more organised way to work.', benefits=['Start with the core business workflows', 'Explore before committing your daily process', 'Keep business knowledge in the decision', 'Grow the routine one clear step at a time']),
 }
 
+from marketing_research import DEEP_PAGES
+PAGES.update(DEEP_PAGES)
+
 @marketing.route('/welcome', defaults={'page': 'welcome'})
 @marketing.route('/explore/<page>')
 def page_view(page):
