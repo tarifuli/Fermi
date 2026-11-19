@@ -5,7 +5,7 @@ Neither typed questions nor database records are sent to an AI provider.
 Unsupported private questions return local guidance rather than a model fallback.
 English and Bengali keywords are recognized; local report text currently uses English.
 
-General advice calls Gemini 2.5 Flash using only a server-owned topic prompt and
+General advice calls Gemini 3.5 Flash-Lite using only a server-owned topic prompt and
 one of two language values. Arbitrary text, attachments, history, user identifiers,
 business identifiers and database results cannot enter this request. Selection of
 a generic topic and language is visible to Google, along with normal service
@@ -41,3 +41,5 @@ remains the authoritative usage limit.
 python -m unittest discover -s tests -p 'test_ai_privacy.py' -v
 Tests cover the closed outbound payload, no private network path, tenant routing,
 cache behavior, missing key, unsupported inputs and sanitized provider errors.
+
+Live Preview verification: general marketing advice returned successfully after upgrading the unavailable 2.5 model to 3.5 Flash-Lite. Only the fixed public-topic prompt was transmitted.
