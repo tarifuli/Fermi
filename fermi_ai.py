@@ -71,6 +71,15 @@ def public_advice(topic, language='en'):
                                if isinstance(p.get('text'), str) and not p.get('thought'))
             if not answer.strip():
                 raise ValueError('Empty answer')
+        except urllib.error.HTTPError as exc:
+            messages = {
+                400: 'Google rejected the request (HTTP 400). Check the API key and model settings.',
+                401: 'Google rejected authentication (HTTP 401). Check the Preview API key.',
+                403: 'Google denied API access (HTTP 403). Check API-key restrictions and project permissions.',
+                404: 'The configured Gemini model is unavailable to this project (HTTP 404).',
+                429: 'Google reports quota or rate limits (HTTP 429). Check the project free-tier quota.',
+            }
+            raise AdviceUnavailable(messages.get(exc.code, 'Google service error. Please try later.')) from None
         except Exception:
             # Never log provider exceptions, prompts, keys, or response bodies.
             raise AdviceUnavailable('General advice is temporarily unavailable or its quota is exhausted. Try later.') from None
