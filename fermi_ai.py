@@ -52,11 +52,10 @@ def public_advice(topic, language='en'):
                   'Do not invent current prices, laws, statistics or sources.')
         payload = {
             'contents': [{'role': 'user', 'parts': [{'text': prompt}]}],
-            'generationConfig': {'maxOutputTokens': 1200,
-                                 'thinkingConfig': {'thinkingBudget': 0}},
+            'generationConfig': {'maxOutputTokens': 1800},
         }
         req = urllib.request.Request(
-            'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+            'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent',
             data=json.dumps(payload).encode('utf-8'),
             headers={'Content-Type': 'application/json', 'x-goog-api-key': key},
             method='POST')
