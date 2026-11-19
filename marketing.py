@@ -19,6 +19,11 @@ PAGES.update(DEEP_PAGES)
 @marketing.route('/explore/<page>')
 def page_view(page):
     from flask import abort
+    if page == 'overview':
+        return render_template('marketing/page.html', page=page, p=PAGES['welcome'], pages=PAGES)
     if page not in PAGES:
         abort(404)
+    if page in ('welcome', 'challenges'):
+        from marketing_research import SOURCES
+        return render_template('marketing/story.html', page='challenges', p=PAGES['challenges'], pages=PAGES, research_sources=SOURCES)
     return render_template('marketing/page.html', page=page, p=PAGES[page], pages=PAGES)

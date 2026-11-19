@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fermi — Your business, connected</title>
+  <meta name="description" content="{{ p.intro }}">
+  <meta name="theme-color" content="#7C3AED">
+  <link rel="stylesheet" href="{{ url_for('static', filename='marketing/marketing.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='marketing/research.css') }}">
+  <script src="{{ url_for('static', filename='marketing/research.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='marketing/marketing.js') }}" defer></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='marketing/story.css') }}">
+</head>
+<body data-page="challenges" class="landing-story">
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header"><a class="brand" href="{{ url_for('marketing.page_view', page='welcome') }}" aria-label="Fermi home"><span class="brand-mark" aria-hidden="true">f</span>fermi<span class="brand-period">.</span></a>
+  <button class="menu-button" aria-expanded="false" aria-controls="primary-nav">Menu</button>
+  <nav id="primary-nav" aria-label="Main navigation"><a href="{{ url_for('marketing.page_view', page='welcome') }}" {% if page=='challenges' %}aria-current="page"{% endif %}>The challenge</a><a href="{{ url_for('marketing.page_view', page='welcome') }}#solution" {% if page=='solutions' %}aria-current="page"{% endif %}>The solution</a><a href="{{ url_for('marketing.page_view', page='welcome') }}#why-fermi" {% if page=='why-fermi' %}aria-current="page"{% endif %}>Why Fermi</a><a href="{{ url_for('marketing.page_view', page='welcome') }}#industry">Industry &amp; impact</a><a class="nav-login" href="/login">Log in</a><a class="button small" href="/signup">Get started</a></nav>
+</header>
+
+<main id="main">
+{# The three supplied screenshot designs open the experience, in order. #}
+{% with p=pages['challenges'], page='challenges' %}
+{% include "marketing/hero.html" %}
+{% include "marketing/editorial.html" %}
+{% include "marketing/experience.html" %}
+{% endwith %}
+
+{% with p=pages['industry-in-numbers'] %}
+<section class="section research-band" id="industry"><div class="wrap">
+<div class="section-head"><p class="eyebrow">THE INDUSTRY IN NUMBERS</p><h2>Small businesses. An enormous role.</h2><p>{{ p.intro }}</p></div>
+<div class="metric-grid">{% for value, label, source in p.metrics %}<article class="metric-card"><strong>{{ value }}</strong><p>{{ label }}</p><a href="#source-{{ source }}">See source and scope</a></article>{% endfor %}</div>
+<p class="research-note">External research describes its stated markets and periods. These are not Fermi customer results or a Bangladesh market-size estimate.</p><a class="story-detail" href="{{ url_for('marketing.page_view', page='industry-in-numbers') }}">Explore the industry research</a>
+</div></section>
+{% endwith %}
+
+{% for slug in ['inventory-economics','returns-and-trust'] %}
+{% with p=pages[slug] %}
+<section class="section wrap story-research reveal" id="{{ slug }}"><div class="story-research-intro"><div><p class="eyebrow">{{ p.eyebrow }}</p><h2>{{ p.title.replace('\n',' ') }}</h2><p>{{ p.intro }}</p><a class="story-detail" href="{{ url_for('marketing.page_view', page=slug) }}">Explore {{ p.nav | lower }}</a></div><aside class="story-evidence"><strong>{{ p.metrics[0][0] }}</strong><p>{{ p.metrics[0][1] }}</p><a href="#source-{{ p.metrics[0][2] }}">See source and scope</a></aside></div><div class="editorial-grid">{% for title, text in p.cards %}<article><h3>{{ title }}</h3><p>{{ text }}</p></article>{% endfor %}</div></section>
+{% endwith %}
+{% endfor %}
+
+{% with p=pages['connected-operations'] %}
+<section class="experience-section" id="connected-operations"><div class="wrap"><div class="section-head"><p class="eyebrow">{{ p.eyebrow }}</p><h2>{{ p.title.replace('\n',' ') }}</h2><p>{{ p.depth_copy }}</p></div><div class="depth-step-grid">{% for title, text in p.steps %}<article><span class="step-line" aria-hidden="true"></span><h3>{{ title }}</h3><p>{{ text }}</p></article>{% endfor %}</div><a class="story-detail" href="{{ url_for('marketing.page_view', page='connected-operations') }}">Explore the complete solution</a></div></section>
+{% endwith %}
+
+{% for slug, anchor in [('solutions','solution'),('inventory','inventory'),('sales-and-invoices','sales-and-invoices'),('business-insights','business-insights'),('why-fermi','why-fermi')] %}
+{% with p=pages[slug], experience_id=anchor %}
+<div class="story-feature"><div class="wrap story-feature-heading"><p class="eyebrow">{{ p.eyebrow }}</p><h2>{{ p.title.replace('\n',' ') }}</h2><p>{{ p.intro }}</p></div>
+{% include "marketing/experience.html" %}
+<div class="wrap story-feature-link"><a class="story-detail" href="{{ url_for('marketing.page_view', page=slug) }}">Explore {{ p.nav | lower }}</a></div></div>
+{% endwith %}
+{% endfor %}
+
+{% with p=pages['welcome'] %}
+<section class="section wrap benefit-section reveal"><div><p class="eyebrow">YOUR EVERYDAY BUSINESS</p><h2>{{ p.outcome }}</h2><p>{{ p.intro }}</p></div><ul class="benefit-list">{% for benefit in p.benefits %}<li><span aria-hidden="true">✓</span>{{ benefit }}</li>{% endfor %}</ul></section>
+{% endwith %}
+
+<section class="wrap sources-section" aria-labelledby="sources-title"><div><p class="eyebrow">EVIDENCE &amp; SCOPE</p><h2 id="sources-title">The context behind the numbers.</h2><p>Research checked 20 November 2026. Statistics keep their stated publication periods.</p></div><div>{% for key, source in research_sources.items() %}<article class="source-entry" id="source-{{ key }}"><a href="{{ source.url }}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">{{ source.name }}</a><p>{{ source.scope }}</p></article>{% endfor %}<p class="source-boundary">Industry figures are not measured Fermi outcomes or promised savings. Fermi is not affiliated with or endorsed by these publishers.</p></div></section>
+{% include "marketing/faq.html" %}
+{% include "marketing/cta.html" %}
+</main>
+{% include "marketing/footer.html" %}
+</body></html>
