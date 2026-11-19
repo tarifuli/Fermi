@@ -90,6 +90,16 @@ def public_advice(topic, language='en'):
 def local_insight(message, business_id, get_db, dashboard_stats, sales_data):
     """Deterministic, tenant-scoped reporting. No model calls or external I/O."""
     text = message.casefold()
+    if (any(w in text for w in ('today', 'আজ')) and
+            any(w in text for w in ('sales', 'revenue', 'বিক্র', 'আয়')) and
+            not any(w in text for w in ('profit', 'লাভ', 'stock', 'inventory', 'স্টক', 'মজুত'))):
+        from datetime import datetime, timezone
+        day = datetime.now(timezone.utc).date().isoformat()
+        with get_db() as db:
+            gross = db.execute("SELECT COALESCE(SUM(total),0) AS amount FROM invoices WHERE business_id=? AND status='paid' AND DATE(created_at)=?", (business_id, day)).fetchone()['amount']
+            refunds = db.execute("SELECT COALESCE(SUM(r.amount),0) AS amount FROM invoice_refunds r JOIN invoices i ON i.id=r.invoice_id WHERE r.business_id=? AND i.status='paid' AND DATE(r.created_at)=?", (business_id, day)).fetchone()['amount']
+        from decimal import Decimal
+        return 'Net sales for ' + day + ' (UTC date, after refunds recorded today): BDT ' + format(Decimal(str(gross)) - Decimal(str(refunds)), ',.2f')
     if any(w in text for w in ('profit', 'profitable', 'লাভ')):
         return 'Profit cannot be calculated reliably from sales alone. Fermi needs complete cost and expense data for a profit report.'
     if any(w in text for w in ('customer', 'customers', 'গ্রাহক')):

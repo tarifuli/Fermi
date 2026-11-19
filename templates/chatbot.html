@@ -71,7 +71,7 @@
       <div class="ai-dot"></div>
       <div>
         <div class="chat-header-title">Fermi AI</div>
-        <div class="chat-header-sub">Private business insights · General advice with Gemini</div>
+        <div class="chat-header-sub">Private records · Public web answers</div>
       </div>
     </div>
 
@@ -81,7 +81,7 @@
         <div class="msg-avatar">🤖</div>
         <div class="msg-bubble">
           <strong>Hello! I'm Fermi AI 👋</strong>
-          Your business questions are answered within Fermi using your own records. Typed questions and records are never sent to Gemini. For general education, choose a topic below; only a fixed topic prompt goes to Google.<br><br>
+          Your business questions are answered within Fermi using your own records. Private business questions stay in Fermi. With your permission, clearly public questions go to Tavily for search and Gemini for an answer. Business records and chat history are never attached.<br><br>
           Try: <em>"Which product sold most this week?"</em> or <em>"What should I restock?"</em>
         </div>
       </div>
@@ -100,8 +100,12 @@
 </div>
 <p style="font-size:12px;color:var(--muted);margin-top:6px">Google receives only the selected generic topic and language. No chat history or business records. Advice may be inaccurate and is not live web research.</p>
 </section>
+<div style="padding:10px 16px;border-top:1px solid var(--border);font-size:12px">
+<label><input type="checkbox" id="allow-public"> Allow public web questions</label>
+<p style="margin-top:4px;color:var(--muted)">Only the current public question is sent to Tavily and Google. Do not type confidential details. Ambiguous or business-related questions stay local. Free search has usage limits.</p>
+</div>
 <div class="chat-input-area">
-      <textarea class="chat-input" id="chat-input" placeholder="Ask about your sales, inventory, revenue..." rows="1"
+      <textarea class="chat-input" id="chat-input" placeholder="Ask about your business or a public topic..." rows="1"
         onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage()}"
         oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px'"></textarea>
       <button class="send-btn" onclick="sendMessage()">
@@ -185,11 +189,35 @@ async function sendMessage() {
     const res  = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message })
+      body: JSON.stringify({ message, allow_public: document.getElementById('allow-public').checked })
     });
     const data = await res.json();
     removeTyping();
-    appendMsg('ai', data.reply || data.error || 'The assistant is temporarily unavailable.');
+    const label = data.source === 'web' ? 'Web answer · ' : data.source === 'local' ? 'Private Fermi data · ' : '';
+    appendMsg('ai', label + (data.reply || data.error || 'The assistant is temporarily unavailable.'));
+    if (data.source === 'web' && Array.isArray(data.sources)) {
+      const panel = document.createElement('div');
+      panel.style.cssText = 'font-size:12px;padding:10px;border:1px solid var(--border);border-radius:8px';
+      const heading = document.createElement('div');
+      heading.textContent = 'Sources retrieved: ' + data.searched_at;
+      panel.appendChild(heading);
+      data.sources.forEach((source, index) => {
+        try {
+          const url = new URL(source.url);
+          if (url.protocol !== 'https:') return;
+          const link = document.createElement('a');
+          link.href = url.href;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.referrerPolicy = 'no-referrer';
+          link.textContent = '[' + (index + 1) + '] ' + source.title;
+          link.style.display = 'block';
+          panel.appendChild(link);
+        } catch (_) {}
+      });
+      document.getElementById('chat-messages').appendChild(panel);
+      panel.scrollIntoView({block: 'nearest'});
+    }
   } catch (e) {
     removeTyping();
     appendMsg('ai', 'Connection error. Please try again.');

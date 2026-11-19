@@ -1777,16 +1777,37 @@ def chatbot():
 @app.route('/api/chat', methods=['POST'])
 @login_required
 def api_chat():
-    from fermi_ai import local_insight
+    from fermi_ai import local_insight, AdviceUnavailable
+    from public_web import classify_question, public_web_answer
     data = request.get_json(silent=True)
-    if not isinstance(data, dict) or set(data) != {'message'} or not isinstance(data.get('message'), str) or not 1 <= len(data['message'].strip()) <= 4000:
+    if (not isinstance(data, dict) or not set(data).issubset({'message', 'allow_public'}) or
+            not isinstance(data.get('message'), str) or not 1 <= len(data['message'].strip()) <= 4000 or
+            ('allow_public' in data and type(data['allow_public']) is not bool)):
         return jsonify({'success': False, 'error': 'Enter a question of 1 to 4,000 characters.'}), 400
-    business_id, error = require_business()
-    if error:
-        return error
-    reply = local_insight(data['message'].strip(), business_id, get_db, get_dashboard_stats, get_sales_data)
-    return jsonify({'success': True, 'reply': reply, 'source': 'local'})
-
+    message = data['message'].strip()
+    route = classify_question(message)
+    if route == 'business':
+        business_id, error = require_business()
+        if error:
+            return error
+        reply = local_insight(message, business_id, get_db, get_dashboard_stats, get_sales_data)
+        return jsonify({'success': True, 'reply': reply, 'source': 'local'})
+    if route == 'clarify':
+        return jsonify({'success': True, 'source': 'clarification',
+                        'reply': 'Is this about your business records in Fermi, or a public topic? For private records, mention my sales, my stock or my business summary. For public topics, ask a complete question such as Who is the CEO of NVIDIA now?'})
+    if data.get('allow_public') is not True:
+        return jsonify({'success': True, 'source': 'consent_required',
+                        'reply': 'This looks like a public question. Enable Allow public web questions below to send this question to Tavily and Google. Do not include confidential information.'})
+    import time
+    current_time = time.time()
+    if current_time - session.get('_last_public_search', 0) < 10:
+        return jsonify({'success': False, 'reply': 'Please wait 10 seconds between public web questions.'}), 429
+    session['_last_public_search'] = current_time
+    try:
+        result = public_web_answer(message, consent=True)
+    except (AdviceUnavailable, ValueError) as exc:
+        return jsonify({'success': False, 'reply': str(exc), 'source': 'web_unavailable'}), 503
+    return jsonify({'success': True, 'source': 'web', **result})
 
 @app.route('/api/chat/general', methods=['POST'])
 @login_required
